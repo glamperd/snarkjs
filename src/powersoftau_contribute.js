@@ -30,7 +30,7 @@ import * as keyPair from "./keypair.js";
 import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
 
-export default async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logger) {
+export default async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logger, progressOptions) {
     await Blake2b.ready();
 
     const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
@@ -70,18 +70,40 @@ export default async function contribute(oldPtauFilename, newPTauFilename, name,
     const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 7);
     await utils.writePTauHeader(fdNew, curve, power);
 
+    let totalPoints = 0, sectionCount = 0, progressOptions = undefined;
+    if (options && options.progressCallback) {
+        const sectionPoints = [
+            (2 ** power) * 2 - 1,
+            2 ** power,
+            2 ** power,
+            2 ** power,
+            1
+        ];
+        totalPoints = sectionPoints.reduce((prev, curr) => prev + curr, 0);
+        const progressCallback = (data) => {
+            let count = 0;
+            if (data.type) {
+                if (data.type === 'end-chunk') sectionCount += data.count;
+            } else {
+                count = data;
+            }
+            options.progressCallback(sectionCount + count, totalPoints);
+        }
+        progressOptions = { progressCallback };
+    }
+
     const startSections = [];
 
     let firstPoints;
-    firstPoints = await processSection(2, "G1",  (2 ** power) * 2 -1, curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG1" );
+    firstPoints = await processSection(2, "G1",  (2 ** power) * 2 -1, curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG1", progressOptions );
     curContribution.tauG1 = firstPoints[1];
-    firstPoints = await processSection(3, "G2",  (2 ** power) , curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG2" );
+    firstPoints = await processSection(3, "G2",  (2 ** power) , curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG2", progressOptions );
     curContribution.tauG2 = firstPoints[1];
-    firstPoints = await processSection(4, "G1",  (2 ** power) , curContribution.key.alpha.prvKey, curContribution.key.tau.prvKey, "alphaTauG1" );
+    firstPoints = await processSection(4, "G1",  (2 ** power) , curContribution.key.alpha.prvKey, curContribution.key.tau.prvKey, "alphaTauG1", progressOptions );
     curContribution.alphaG1 = firstPoints[0];
-    firstPoints = await processSection(5, "G1",  (2 ** power) , curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG1" );
+    firstPoints = await processSection(5, "G1",  (2 ** power) , curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG1", progressOptions );
     curContribution.betaG1 = firstPoints[0];
-    firstPoints = await processSection(6, "G2",  1, curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG2" );
+    firstPoints = await processSection(6, "G2",  1, curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG2", progressOptions );
     curContribution.betaG2 = firstPoints[0];
 
     curContribution.partialHash = responseHasher.getPartialHash();
@@ -117,7 +139,7 @@ export default async function contribute(oldPtauFilename, newPTauFilename, name,
 
     return hashResponse;
 
-    async function processSection(sectionId, groupName, NPoints, first, inc, sectionName) {
+    async function processSection(sectionId, groupName, NPoints, first, inc, sectionName, progressOptions) {
         const res = [];
         fdOld.pos = sections[sectionId][0].p;
 
@@ -151,9 +173,17 @@ export default async function contribute(oldPtauFilename, newPTauFilename, name,
                 for (let j=0; j<Math.min(2, NPoints); j++)
                     res.push(G.fromRprLEM(buffOutLEM, j*sG));
             t = curve.Fr.mul(t, curve.Fr.exp(inc, n));
+
+            if (progressOptions && progressOptions.progressCallback) {
+                progressOptions.progressCallback(i);
+            }
         }
 
         await binFileUtils.endWriteSection(fdNew);
+
+        if (progressOptions && progressOptions.progressCallback) {
+            progressOptions.progressCallback({ type: 'end-chunk', count: NPoints });
+        }
 
         return res;
     }
