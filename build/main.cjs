@@ -3008,7 +3008,7 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logger) {
+async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logger, options) {
     await Blake2b__default["default"].ready();
 
     const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
@@ -3048,18 +3048,40 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
     const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 7);
     await writePTauHeader(fdNew, curve, power);
 
+    let totalPoints = 0, sectionCount = 0, progressOptions = undefined;
+    if (options && options.progressCallback) {
+        const sectionPoints = [
+            (2 ** power) * 2 - 1,
+            2 ** power,
+            2 ** power,
+            2 ** power,
+            1
+        ];
+        totalPoints = sectionPoints.reduce((prev, curr) => prev + curr, 0);
+        const progressCallback = (data) => {
+            let count = 0;
+            if (data.type) {
+                if (data.type === 'end-chunk') sectionCount += data.count;
+            } else {
+                count = data;
+            }
+            options.progressCallback(sectionCount + count, totalPoints);
+        };
+        progressOptions = { progressCallback };
+    }
+
     const startSections = [];
 
     let firstPoints;
-    firstPoints = await processSection(2, "G1",  (2 ** power) * 2 -1, curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG1" );
+    firstPoints = await processSection(2, "G1",  (2 ** power) * 2 -1, curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG1", progressOptions );
     curContribution.tauG1 = firstPoints[1];
-    firstPoints = await processSection(3, "G2",  (2 ** power) , curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG2" );
+    firstPoints = await processSection(3, "G2",  (2 ** power) , curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG2", progressOptions );
     curContribution.tauG2 = firstPoints[1];
-    firstPoints = await processSection(4, "G1",  (2 ** power) , curContribution.key.alpha.prvKey, curContribution.key.tau.prvKey, "alphaTauG1" );
+    firstPoints = await processSection(4, "G1",  (2 ** power) , curContribution.key.alpha.prvKey, curContribution.key.tau.prvKey, "alphaTauG1", progressOptions );
     curContribution.alphaG1 = firstPoints[0];
-    firstPoints = await processSection(5, "G1",  (2 ** power) , curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG1" );
+    firstPoints = await processSection(5, "G1",  (2 ** power) , curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG1", progressOptions );
     curContribution.betaG1 = firstPoints[0];
-    firstPoints = await processSection(6, "G2",  1, curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG2" );
+    firstPoints = await processSection(6, "G2",  1, curContribution.key.beta.prvKey, curContribution.key.tau.prvKey, "betaTauG2", progressOptions );
     curContribution.betaG2 = firstPoints[0];
 
     curContribution.partialHash = responseHasher.getPartialHash();
@@ -3095,7 +3117,7 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
 
     return hashResponse;
 
-    async function processSection(sectionId, groupName, NPoints, first, inc, sectionName) {
+    async function processSection(sectionId, groupName, NPoints, first, inc, sectionName, progressOptions) {
         const res = [];
         fdOld.pos = sections[sectionId][0].p;
 
@@ -3129,9 +3151,17 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
                 for (let j=0; j<Math.min(2, NPoints); j++)
                     res.push(G.fromRprLEM(buffOutLEM, j*sG));
             t = curve.Fr.mul(t, curve.Fr.exp(inc, n));
+
+            if (progressOptions && progressOptions.progressCallback) {
+                progressOptions.progressCallback(i);
+            }
         }
 
         await binFileUtils__namespace.endWriteSection(fdNew);
+
+        if (progressOptions && progressOptions.progressCallback) {
+            progressOptions.progressCallback({ type: 'end-chunk', count: NPoints });
+        }
 
         return res;
     }
@@ -5444,7 +5474,7 @@ async function phase2verifyFromR1cs(r1csFileName, pTauFileName, zkeyFileName, lo
 async function phase2contribute(zkeyNameOld, zkeyNameNew, name, entropy, logger, options) {
     // TODO: Validate options.
 
-    await Blake2b__default['default'].ready();
+    await Blake2b__default["default"].ready();
 
     const {fd: fdOld, sections: sections} = await binFileUtils__namespace.readBinFile(zkeyNameOld, "zkey", 2);
     const zkey = await readHeader$1(fdOld, sections);
@@ -6027,6 +6057,8 @@ var zkey = /*#__PURE__*/Object.freeze({
 
 async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
 
+    if (global.gc) {global.gc();}
+
     await Blake2b__default["default"].ready();
 
     const {fd: fdPTau, sections: sectionsPTau} = await binFileUtils.readBinFile(ptauName, "ptau", 1, 1<<22, 1<<24);
@@ -6050,6 +6082,7 @@ async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
     const nPublic = r1cs.nOutputs + r1cs.nPubInputs;
 
     await processConstraints();
+    if (global.gc) {global.gc();}
 
     const fdZKey = await binFileUtils.createBinFile(zkeyName, "zkey", 1, 14, 1<<22, 1<<24);
 
@@ -6085,16 +6118,27 @@ async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
 
 
     await writeAdditions(3, "Additions");
+    if (global.gc) {global.gc();}
     await writeWitnessMap(4, 0, "Amap");
+    if (global.gc) {global.gc();}
     await writeWitnessMap(5, 1, "Bmap");
+    if (global.gc) {global.gc();}
     await writeWitnessMap(6, 2, "Cmap");
+    if (global.gc) {global.gc();}
     await writeQMap(7, 3, "Qm");
+    if (global.gc) {global.gc();}
     await writeQMap(8, 4, "Ql");
+    if (global.gc) {global.gc();}
     await writeQMap(9, 5, "Qr");
+    if (global.gc) {global.gc();}
     await writeQMap(10, 6, "Qo");
+    if (global.gc) {global.gc();}
     await writeQMap(11, 7, "Qc");
+    if (global.gc) {global.gc();}
     await writeSigma(12, "sigma");
+    if (global.gc) {global.gc();}
     await writeLs(13, "lagrange polynomials");
+    if (global.gc) {global.gc();}
 
     // Write PTau points
     ////////////
@@ -6104,6 +6148,7 @@ async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
     await fdPTau.readToBuffer(buffOut, 0, (domainSize+6)*sG1, sectionsPTau[2][0].p);
     await fdZKey.write(buffOut);
     await binFileUtils.endWriteSection(fdZKey);
+    if (global.gc) {global.gc();}
 
 
     await writeHeaders();
@@ -6294,13 +6339,17 @@ async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
             }
             if ((logger)&&(s%1000000 == 0)) logger.debug(`writing ${name} phase2: ${s}/${plonkNVars}`);
         }
+    	if (global.gc) {global.gc();}
         await binFileUtils.startWriteSection(fdZKey, sectionNum);
         let S1 = sigma.slice(0, domainSize*n8r);
         await writeP4(S1);
+    	if (global.gc) {global.gc();}
         let S2 = sigma.slice(domainSize*n8r, domainSize*n8r*2);
         await writeP4(S2);
+    	if (global.gc) {global.gc();}
         let S3 = sigma.slice(domainSize*n8r*2, domainSize*n8r*3);
         await writeP4(S3);
+    	if (global.gc) {global.gc();}
         await binFileUtils.endWriteSection(fdZKey);
 
         S1 = await Fr.batchFromMontgomery(S1);
@@ -6308,8 +6357,11 @@ async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
         S3 = await Fr.batchFromMontgomery(S3);
 
         vk.S1= await curve.G1.multiExpAffine(LPoints, S1, logger, "multiexp S1");
+    	if (global.gc) {global.gc();}
         vk.S2= await curve.G1.multiExpAffine(LPoints, S2, logger, "multiexp S2");
+    	if (global.gc) {global.gc();}
         vk.S3= await curve.G1.multiExpAffine(LPoints, S3, logger, "multiexp S3");
+    	if (global.gc) {global.gc();}
 
         function buildSigma(s, p) {
             if (typeof lastAparence[s] === "undefined") {

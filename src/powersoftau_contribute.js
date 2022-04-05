@@ -30,7 +30,7 @@ import * as keyPair from "./keypair.js";
 import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
 
-export default async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logger, progressOptions) {
+export default async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logger, options) {
     await Blake2b.ready();
 
     const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
