@@ -5,6 +5,22 @@
     "version": "0.2.0",
     "configurations": [
     {
+        "name": "PoT BLS12-381",
+        "program": "cli.js",
+        "args": [
+            "powersoftau",
+            "new",
+            "bls12-381",
+            "16"
+        ],
+        "request": "launch",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "node",
+        "cwd": "${workspaceRoot}"
+    },
+    {
         "name": "Attach",
         "port": 9229,
         "request": "attach",
@@ -20,7 +36,7 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "cli.js",
+            "program": "${workspaceRoot}/cli.js",
             "args": [
                 "pks",
                 "test/plonk_circuit/circuit.r1cs",
