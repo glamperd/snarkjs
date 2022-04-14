@@ -54,7 +54,7 @@ async function getCurveFromQ(q) {
     } else if (ffjavascript.Scalar.eq(q, bls12381q)) {
         curve = await ffjavascript.buildBls12381();
     } else {
-        throw new Error(`Curve not supported: ${ffjavascript.Scalar.toString(q)}`);
+        throw new Error(`Curve not supported: ${ffjavascript.Scalar.toString(q, 16)}`);
     }
     return curve;
 }
