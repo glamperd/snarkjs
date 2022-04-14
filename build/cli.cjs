@@ -19,32 +19,12 @@ var Logger = require('logplease');
 
 function _interopDefaultLegacy (e) { return e && typeof e === 'object' && 'default' in e ? e : { 'default': e }; }
 
-function _interopNamespace(e) {
-    if (e && e.__esModule) return e;
-    var n = Object.create(null);
-    if (e) {
-        Object.keys(e).forEach(function (k) {
-            if (k !== 'default') {
-                var d = Object.getOwnPropertyDescriptor(e, k);
-                Object.defineProperty(n, k, d.get ? d : {
-                    enumerable: true,
-                    get: function () { return e[k]; }
-                });
-            }
-        });
-    }
-    n["default"] = e;
-    return Object.freeze(n);
-}
-
 var fs__default = /*#__PURE__*/_interopDefaultLegacy(fs);
 var url__default = /*#__PURE__*/_interopDefaultLegacy(url);
-var fastFile__namespace = /*#__PURE__*/_interopNamespace(fastFile);
 var path__default = /*#__PURE__*/_interopDefaultLegacy(path);
 var Blake2b__default = /*#__PURE__*/_interopDefaultLegacy(Blake2b);
 var readline__default = /*#__PURE__*/_interopDefaultLegacy(readline);
 var crypto__default = /*#__PURE__*/_interopDefaultLegacy(crypto);
-var binFileUtils__namespace = /*#__PURE__*/_interopNamespace(binFileUtils);
 var ejs__default = /*#__PURE__*/_interopDefaultLegacy(ejs);
 var jsSha3__default = /*#__PURE__*/_interopDefaultLegacy(jsSha3);
 var Logger__default = /*#__PURE__*/_interopDefaultLegacy(Logger);
@@ -74,7 +54,7 @@ async function loadSymbols(symFileName) {
         varIdx2Name: [ "one" ],
         componentIdx2Name: []
     };
-    const fd = await fastFile__namespace.readExisting(symFileName);
+    const fd = await fastFile.readExisting(symFileName);
     const buff = await fd.read(fd.totalSize);
     const symsStr = new TextDecoder("utf-8").decode(buff);
     const lines = symsStr.split("\n");
@@ -122,7 +102,7 @@ async function loadSymbols(symFileName) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-function r1csPrint$1(r1cs, syms, logger) {
+function r1csPrint(r1cs, syms, logger) {
     for (let i=0; i<r1cs.constraints.length; i++) {
         printCostraint(r1cs.constraints[i]);
     }
@@ -171,7 +151,7 @@ function r1csPrint$1(r1cs, syms, logger) {
 const bls12381r = ffjavascript.Scalar.e("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001", 16);
 const bn128r = ffjavascript.Scalar.e("21888242871839275222246405745257275088548364400416034343698204186575808495617");
 
-async function r1csInfo$1(r1csName, logger) {
+async function r1csInfo(r1csName, logger) {
 
     const cir = await r1csfile.readR1cs(r1csName);
 
@@ -211,16 +191,16 @@ async function r1csInfo$1(r1csName, logger) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-function stringifyBigInts$4(Fr, o) {
+function stringifyBigInts(Fr, o) {
     if (o instanceof Uint8Array)  {
         return Fr.toString(o);
     } else if (Array.isArray(o)) {
-        return o.map(stringifyBigInts$4.bind(null, Fr));
+        return o.map(stringifyBigInts.bind(null, Fr));
     } else if (typeof o == "object") {
         const res = {};
         const keys = Object.keys(o);
         keys.forEach( (k) => {
-            res[k] = stringifyBigInts$4(Fr, o[k]);
+            res[k] = stringifyBigInts(Fr, o[k]);
         });
         return res;
     } else if ((typeof(o) == "bigint") || o.eq !== undefined)  {
@@ -237,7 +217,7 @@ async function r1csExportJson(r1csFileName, logger) {
     const Fr=cir.curve.Fr;
     delete cir.curve;
 
-    return stringifyBigInts$4(Fr, cir);
+    return stringifyBigInts(Fr, cir);
 }
 
 /*
@@ -259,13 +239,13 @@ async function r1csExportJson(r1csFileName, logger) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-const __dirname$2 = path__default["default"].dirname(url__default["default"].fileURLToPath((typeof document === 'undefined' ? new (require('u' + 'rl').URL)('file:' + __filename).href : (document.currentScript && document.currentScript.src || new URL('cli.cjs', document.baseURI).href))));
+const __dirname$1 = path__default['default'].dirname(url__default['default'].fileURLToPath((typeof document === 'undefined' ? new (require('u' + 'rl').URL)('file:' + __filename).href : (document.currentScript && document.currentScript.src || new URL('cli.cjs', document.baseURI).href))));
 
 let pkgS;
 try {
-    pkgS = fs__default["default"].readFileSync(path__default["default"].join(__dirname$2, "package.json"));
+    pkgS = fs__default['default'].readFileSync(path__default['default'].join(__dirname$1, "package.json"));
 } catch (err) {
-    pkgS = fs__default["default"].readFileSync(path__default["default"].join(__dirname$2, "..","package.json"));
+    pkgS = fs__default['default'].readFileSync(path__default['default'].join(__dirname$1, "..","package.json"));
 }
 
 const pkg = JSON.parse(pkgS);
@@ -550,7 +530,7 @@ function hashToG2(curve, hash) {
 
 function getG2sp(curve, persinalization, challenge, g1s, g1sx) {
 
-    const h = Blake2b__default["default"](64);
+    const h = Blake2b__default['default'](64);
     const b1 = new Uint8Array([persinalization]);
     h.update(b1);
     h.update(challenge);
@@ -656,12 +636,12 @@ function hashIsEqual(h1, h2) {
 
 function cloneHasher(h) {
     const ph = h.getPartialHash();
-    const res = Blake2b__default["default"](64);
+    const res = Blake2b__default['default'](64);
     res.setPartialHash(ph);
     return res;
 }
 
-async function sameRatio$2(curve, g1s, g1sx, g2s, g2sx) {
+async function sameRatio(curve, g1s, g1sx, g2s, g2sx) {
     if (curve.G1.isZero(g1s)) return false;
     if (curve.G1.isZero(g1sx)) return false;
     if (curve.G2.isZero(g2s)) return false;
@@ -676,7 +656,7 @@ function askEntropy() {
     if (process.browser) {
         return window.prompt("Enter a random text. (Entropy): ", "");
     } else {
-        const rl = readline__default["default"].createInterface({
+        const rl = readline__default['default'].createInterface({
             input: process.stdin,
             output: process.stdout
         });
@@ -692,8 +672,8 @@ async function getRandomRng(entropy) {
     while (!entropy) {
         entropy = await askEntropy();
     }
-    const hasher = Blake2b__default["default"](64);
-    hasher.update(crypto__default["default"].randomBytes(64));
+    const hasher = Blake2b__default['default'](64);
+    hasher.update(crypto__default['default'].randomBytes(64));
     const enc = new TextEncoder(); // always utf-8
     hasher.update(enc.encode(entropy));
     const hash = Buffer.from(hasher.digest());
@@ -720,7 +700,7 @@ function rngFromBeaconParams(beaconHash, numIterationsExp) {
     let curHash = beaconHash;
     for (let i=0; i<nIterationsOuter; i++) {
         for (let j=0; j<nIterationsInner; j++) {
-            curHash = crypto__default["default"].createHash("sha256").update(curHash).digest();
+            curHash = crypto__default['default'].createHash("sha256").update(curHash).digest();
         }
     }
 
@@ -749,8 +729,8 @@ function byteArray2hex(byteArray) {
     }).join("");
 }
 
-ffjavascript.Scalar.e("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001", 16);
-ffjavascript.Scalar.e("21888242871839275222246405745257275088548364400416034343698204186575808495617");
+const bls12381r$1 = ffjavascript.Scalar.e("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001", 16);
+const bn128r$1 = ffjavascript.Scalar.e("21888242871839275222246405745257275088548364400416034343698204186575808495617");
 
 const bls12381q = ffjavascript.Scalar.e("1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab", 16);
 const bn128q = ffjavascript.Scalar.e("21888242871839275222246405745257275088696311157297823662689037894645226208583");
@@ -941,7 +921,7 @@ async function writePtauPubKey(fd, curve, key, montgomery) {
     await fd.write(buff);
 }
 
-async function readContribution$1(fd, curve) {
+async function readContribution(fd, curve) {
     const c = {};
 
     c.tauG1 = await readG1();
@@ -957,7 +937,7 @@ async function readContribution$1(fd, curve) {
     const buffV  = new Uint8Array(curve.G1.F.n8*2*6+curve.G2.F.n8*2*3);
     toPtauPubKeyRpr(buffV, 0, curve, c.key, false);
 
-    const responseHasher = Blake2b__default["default"](64);
+    const responseHasher = Blake2b__default['default'](64);
     responseHasher.setPartialHash(c.partialHash);
     responseHasher.update(buffV);
     c.responseHash = responseHasher.digest();
@@ -1013,7 +993,7 @@ async function readContributions(fd, curve, sections) {
     const nContributions = await fd.readULE32();
     const contributions = [];
     for (let i=0; i<nContributions; i++) {
-        const c = await readContribution$1(fd, curve);
+        const c = await readContribution(fd, curve);
         c.id = i+1;
         contributions.push(c);
     }
@@ -1023,7 +1003,7 @@ async function readContributions(fd, curve, sections) {
     return contributions;
 }
 
-async function writeContribution$1(fd, curve, contribution) {
+async function writeContribution(fd, curve, contribution) {
 
     const buffG1 = new Uint8Array(curve.F1.n8*2);
     const buffG2 = new Uint8Array(curve.F2.n8*2);
@@ -1081,7 +1061,7 @@ async function writeContributions(fd, curve, contributions) {
 
     await fd.writeULE32(contributions.length);
     for (let i=0; i< contributions.length; i++) {
-        await writeContribution$1(fd, curve, contributions[i]);
+        await writeContribution(fd, curve, contributions[i]);
     }
     const contributionsSize = fd.pos - pContributionsSize - 8;
 
@@ -1094,14 +1074,14 @@ async function writeContributions(fd, curve, contributions) {
 function calculateFirstChallengeHash(curve, power, logger) {
     if (logger) logger.debug("Calculating First Challenge Hash");
 
-    const hasher = new Blake2b__default["default"](64);
+    const hasher = new Blake2b__default['default'](64);
 
     const vG1 = new Uint8Array(curve.G1.F.n8*2);
     const vG2 = new Uint8Array(curve.G2.F.n8*2);
     curve.G1.toRprUncompressed(vG1, 0, curve.G1.g);
     curve.G2.toRprUncompressed(vG2, 0, curve.G2.g);
 
-    hasher.update(Blake2b__default["default"](64).digest());
+    hasher.update(Blake2b__default['default'](64).digest());
 
     let n;
 
@@ -1168,9 +1148,9 @@ function keyFromBeacon(curve, challengeHash, beaconHash, numIterationsExp) {
 
 async function newAccumulator(curve, power, fileName, logger) {
 
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
-    const fd = await binFileUtils__namespace.createBinFile(fileName, "ptau", 1, 7);
+    const fd = await binFileUtils.createBinFile(fileName, "ptau", 1, 7);
 
     await writePTauHeader(fd, curve, power, 0);
 
@@ -1179,61 +1159,61 @@ async function newAccumulator(curve, power, fileName, logger) {
 
     // Write tauG1
     ///////////
-    await binFileUtils__namespace.startWriteSection(fd, 2);
+    await binFileUtils.startWriteSection(fd, 2);
     const nTauG1 = (2 ** power) * 2 -1;
     for (let i=0; i< nTauG1; i++) {
         await fd.write(buffG1);
         if ((logger)&&((i%100000) == 0)&&i) logger.log("tauG1: " + i);
     }
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
     // Write tauG2
     ///////////
-    await binFileUtils__namespace.startWriteSection(fd, 3);
+    await binFileUtils.startWriteSection(fd, 3);
     const nTauG2 = (2 ** power);
     for (let i=0; i< nTauG2; i++) {
         await fd.write(buffG2);
         if ((logger)&&((i%100000) == 0)&&i) logger.log("tauG2: " + i);
     }
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
     // Write alphaTauG1
     ///////////
-    await binFileUtils__namespace.startWriteSection(fd, 4);
+    await binFileUtils.startWriteSection(fd, 4);
     const nAlfaTauG1 = (2 ** power);
     for (let i=0; i< nAlfaTauG1; i++) {
         await fd.write(buffG1);
         if ((logger)&&((i%100000) == 0)&&i) logger.log("alphaTauG1: " + i);
     }
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
     // Write betaTauG1
     ///////////
-    await binFileUtils__namespace.startWriteSection(fd, 5);
+    await binFileUtils.startWriteSection(fd, 5);
     const nBetaTauG1 = (2 ** power);
     for (let i=0; i< nBetaTauG1; i++) {
         await fd.write(buffG1);
         if ((logger)&&((i%100000) == 0)&&i) logger.log("betaTauG1: " + i);
     }
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
     // Write betaG2
     ///////////
-    await binFileUtils__namespace.startWriteSection(fd, 6);
+    await binFileUtils.startWriteSection(fd, 6);
     await fd.write(buffG2);
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
     // Contributions
     ///////////
-    await binFileUtils__namespace.startWriteSection(fd, 7);
+    await binFileUtils.startWriteSection(fd, 7);
     await fd.writeULE32(0); // 0 Contributions
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
     await fd.close();
 
     const firstChallengeHash = calculateFirstChallengeHash(curve, power, logger);
 
-    if (logger) logger.debug(formatHash(Blake2b__default["default"](64).digest(), "Blank Contribution Hash:"));
+    if (logger) logger.debug(formatHash(Blake2b__default['default'](64).digest(), "Blank Contribution Hash:"));
 
     if (logger) logger.info(formatHash(firstChallengeHash, "First Contribution Hash:"));
 
@@ -1244,15 +1224,15 @@ async function newAccumulator(curve, power, fileName, logger) {
 // Format of the outpu
 
 async function exportChallenge(pTauFilename, challengeFilename, logger) {
-    await Blake2b__default["default"].ready();
-    const {fd: fdFrom, sections} = await binFileUtils__namespace.readBinFile(pTauFilename, "ptau", 1);
+    await Blake2b__default['default'].ready();
+    const {fd: fdFrom, sections} = await binFileUtils.readBinFile(pTauFilename, "ptau", 1);
 
     const {curve, power} = await readPTauHeader(fdFrom, sections);
 
     const contributions = await readContributions(fdFrom, curve, sections);
     let lastResponseHash, curChallengeHash;
     if (contributions.length == 0) {
-        lastResponseHash = Blake2b__default["default"](64).digest();
+        lastResponseHash = Blake2b__default['default'](64).digest();
         curChallengeHash = calculateFirstChallengeHash(curve, power);
     } else {
         lastResponseHash = contributions[contributions.length-1].responseHash;
@@ -1264,9 +1244,9 @@ async function exportChallenge(pTauFilename, challengeFilename, logger) {
     if (logger) logger.info(formatHash(curChallengeHash, "New Challenge Hash: "));
 
 
-    const fdTo = await fastFile__namespace.createOverride(challengeFilename);
+    const fdTo = await fastFile.createOverride(challengeFilename);
 
-    const toHash = Blake2b__default["default"](64);
+    const toHash = Blake2b__default['default'](64);
     await fdTo.write(lastResponseHash);
     toHash.update(lastResponseHash);
 
@@ -1295,7 +1275,7 @@ async function exportChallenge(pTauFilename, challengeFilename, logger) {
         const sG = G.F.n8*2;
         const nPointsChunk = Math.floor((1<<24)/sG);
 
-        await binFileUtils__namespace.startReadUniqueSection(fdFrom, sections, sectionId);
+        await binFileUtils.startReadUniqueSection(fdFrom, sections, sectionId);
         for (let i=0; i< nPoints; i+= nPointsChunk) {
             if (logger) logger.debug(`Exporting ${sectionName}: ${i}/${nPoints}`);
             const n = Math.min(nPoints-i, nPointsChunk);
@@ -1305,7 +1285,7 @@ async function exportChallenge(pTauFilename, challengeFilename, logger) {
             await fdTo.write(buff);
             toHash.update(buff);
         }
-        await binFileUtils__namespace.endReadSection(fdFrom);
+        await binFileUtils.endReadSection(fdFrom);
     }
 
 
@@ -1332,12 +1312,12 @@ async function exportChallenge(pTauFilename, challengeFilename, logger) {
 
 async function importResponse(oldPtauFilename, contributionFilename, newPTauFilename, name, importPoints, logger) {
 
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
     const noHash = new Uint8Array(64);
     for (let i=0; i<64; i++) noHash[i] = 0xFF;
 
-    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power} = await readPTauHeader(fdOld, sections);
     const contributions = await readContributions(fdOld, curve, sections);
     const currentContribution = {};
@@ -1349,7 +1329,7 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
     const sG2 = curve.F2.n8*2;
     const scG2 = curve.F2.n8; // Compresed size
 
-    const fdResponse = await fastFile__namespace.readExisting(contributionFilename);
+    const fdResponse = await fastFile.readExisting(contributionFilename);
 
     if  (fdResponse.totalSize !=
         64 +                            // Old Hash
@@ -1369,7 +1349,7 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
         lastChallengeHash = calculateFirstChallengeHash(curve, power, logger);
     }
 
-    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, importPoints ? 7: 2);
+    const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, importPoints ? 7: 2);
     await writePTauHeader(fdNew, curve, power);
 
     const contributionPreviousHash = await fdResponse.read(64);
@@ -1382,7 +1362,7 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
     if(!hashIsEqual(contributionPreviousHash,lastChallengeHash))
         throw new Error("Wrong contribution. this contribution is not based on the previus hash");
 
-    const hasherResponse = new Blake2b__default["default"](64);
+    const hasherResponse = new Blake2b__default['default'](64);
     hasherResponse.update(contributionPreviousHash);
 
     const startSections = [];
@@ -1411,7 +1391,7 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
     if (logger) logger.info(formatHash(hashResponse, "Contribution Response Hash imported: "));
 
     if (importPoints) {
-        const nextChallengeHasher = new Blake2b__default["default"](64);
+        const nextChallengeHasher = new Blake2b__default['default'](64);
         nextChallengeHasher.update(hashResponse);
 
         await hashSection(nextChallengeHasher, fdNew, "G1", 2, (2 ** power) * 2 -1, "tauG1", logger);
@@ -1453,7 +1433,7 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
 
         const singularPoints = [];
 
-        await binFileUtils__namespace.startWriteSection(fdTo, sectionId);
+        await binFileUtils.startWriteSection(fdTo, sectionId);
         const nPointsChunk = Math.floor((1<<24)/sG);
 
         startSections[sectionId] = fdTo.pos;
@@ -1477,7 +1457,7 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
             }
         }
 
-        await binFileUtils__namespace.endWriteSection(fdTo);
+        await binFileUtils.endWriteSection(fdTo);
 
         return singularPoints;
     }
@@ -1555,7 +1535,7 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const sameRatio$1 = sameRatio$2;
+const sameRatio$1 = sameRatio;
 
 async function verifyContribution(curve, cur, prev, logger) {
     let sr;
@@ -1660,9 +1640,9 @@ async function verifyContribution(curve, cur, prev, logger) {
 
 async function verify(tauFilename, logger) {
     let sr;
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
-    const {fd, sections} = await binFileUtils__namespace.readBinFile(tauFilename, "ptau", 1);
+    const {fd, sections} = await binFileUtils.readBinFile(tauFilename, "ptau", 1);
     const {curve, power, ceremonyPower} = await readPTauHeader(fd, sections);
     const contrs = await readContributions(fd, curve, sections);
 
@@ -1677,7 +1657,7 @@ async function verify(tauFilename, logger) {
         betaG1: curve.G1.g,
         betaG2: curve.G2.g,
         nextChallenge: calculateFirstChallengeHash(curve, ceremonyPower, logger),
-        responseHash: Blake2b__default["default"](64).digest()
+        responseHash: Blake2b__default['default'](64).digest()
     };
 
     if (contrs.length == 0) {
@@ -1697,7 +1677,7 @@ async function verify(tauFilename, logger) {
     if (!res) return false;
 
 
-    const nextContributionHasher = Blake2b__default["default"](64);
+    const nextContributionHasher = Blake2b__default['default'](64);
     nextContributionHasher.update(curContr.responseHash);
 
     // Verify powers and compute nextChallengeHash
@@ -1831,7 +1811,7 @@ async function verify(tauFilename, logger) {
         const buffV  = new Uint8Array(curve.G1.F.n8*2*6+curve.G2.F.n8*2*3);
         toPtauPubKeyRpr(buffV, 0, curve, curContr.key, false);
 
-        const responseHasher = Blake2b__default["default"](64);
+        const responseHasher = Blake2b__default['default'](64);
         responseHasher.setPartialHash(curContr.partialHash);
         responseHasher.update(buffV);
         const responseHash = responseHasher.digest();
@@ -1875,7 +1855,7 @@ async function verify(tauFilename, logger) {
         const MAX_CHUNK_SIZE = 1<<16;
         const G = curve[groupName];
         const sG = G.F.n8*2;
-        await binFileUtils__namespace.startReadUniqueSection(fd, sections, idSection);
+        await binFileUtils.startReadUniqueSection(fd, sections, idSection);
 
         const singularPoints = [];
 
@@ -1893,12 +1873,12 @@ async function verify(tauFilename, logger) {
             nextContributionHasher.update(basesU);
 
             const scalars = new Uint8Array(4*(n-1));
-            crypto__default["default"].randomFillSync(scalars);
+            crypto__default['default'].randomFillSync(scalars);
 
 
             if (i>0) {
                 const firstBase = G.fromRprLEM(bases, 0);
-                const r = crypto__default["default"].randomBytes(4).readUInt32BE(0, true);
+                const r = crypto__default['default'].randomBytes(4).readUInt32BE(0, true);
 
                 R1 = G.add(R1, G.timesScalar(lastBase, r));
                 R2 = G.add(R2, G.timesScalar(firstBase, r));
@@ -1921,7 +1901,7 @@ async function verify(tauFilename, logger) {
             }
 
         }
-        await binFileUtils__namespace.endReadSection(fd);
+        await binFileUtils.endReadSection(fd);
 
         return {
             R1: R1,
@@ -1939,7 +1919,7 @@ async function verify(tauFilename, logger) {
 
         const seed= new Array(8);
         for (let i=0; i<8; i++) {
-            seed[i] = crypto__default["default"].randomBytes(4).readUInt32BE(0, true);
+            seed[i] = crypto__default['default'].randomBytes(4).readUInt32BE(0, true);
         }
 
         for (let p=0; p<= power; p ++) {
@@ -1975,7 +1955,7 @@ async function verify(tauFilename, logger) {
             buff_r = new Uint8Array(buff_r.buffer, buff_r.byteOffset, buff_r.byteLength);
 
             if (logger) logger.debug(`reading points Powers${p}...`);
-            await binFileUtils__namespace.startReadUniqueSection(fd, sections, tauSection);
+            await binFileUtils.startReadUniqueSection(fd, sections, tauSection);
             buffG = new ffjavascript.BigBuffer(nPoints*sG);
             if (p == power+1) {
                 await fd.readToBuffer(buffG, 0, (nPoints-1)*sG);
@@ -1983,7 +1963,7 @@ async function verify(tauFilename, logger) {
             } else {
                 await fd.readToBuffer(buffG, 0, nPoints*sG);
             }
-            await binFileUtils__namespace.endReadSection(fd, true);
+            await binFileUtils.endReadSection(fd, true);
 
             const resTau = await G.multiExpAffine(buffG, buff_r, logger, sectionName + "_" + p);
 
@@ -2010,10 +1990,10 @@ async function verify(tauFilename, logger) {
             buff_r = await curve.Fr.batchFromMontgomery(buff_r);
 
             if (logger) logger.debug(`reading points Lagrange${p}...`);
-            await binFileUtils__namespace.startReadUniqueSection(fd, sections, lagrangeSection);
+            await binFileUtils.startReadUniqueSection(fd, sections, lagrangeSection);
             fd.pos += sG*((2 ** p)-1);
             await fd.readToBuffer(buffG, 0, nPoints*sG);
-            await binFileUtils__namespace.endReadSection(fd, true);
+            await binFileUtils.endReadSection(fd, true);
 
             const resLagrange = await G.multiExpAffine(buffG, buff_r, logger, sectionName + "_" + p + "_transformed");
 
@@ -2059,8 +2039,8 @@ async function applyKeyToSection(fdOld, sections, fdNew, idSection, curve, group
     const sG = G.F.n8*2;
     const nPoints = sections[idSection][0].size / sG;
 
-    await binFileUtils__namespace.startReadUniqueSection(fdOld, sections,idSection );
-    await binFileUtils__namespace.startWriteSection(fdNew, idSection);
+    await binFileUtils.startReadUniqueSection(fdOld, sections,idSection );
+    await binFileUtils.startWriteSection(fdNew, idSection);
 
     let t = first;
     for (let i=0; i<nPoints; i += MAX_CHUNK_SIZE) {
@@ -2073,8 +2053,8 @@ async function applyKeyToSection(fdOld, sections, fdNew, idSection, curve, group
         t = curve.Fr.mul(t, curve.Fr.exp(inc, n));
     }
 
-    await binFileUtils__namespace.endWriteSection(fdNew);
-    await binFileUtils__namespace.endReadSection(fdOld);
+    await binFileUtils.endWriteSection(fdNew);
+    await binFileUtils.endReadSection(fdOld);
 }
 
 function countPoints(sections, idSection, curve, groupName) {
@@ -2129,9 +2109,9 @@ async function applyKeyToChallengeSection(fdOld, fdNew, responseHasher, curve, g
 */
 
 async function challengeContribute(curve, challengeFilename, responesFileName, entropy, logger) {
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
-    const fdFrom = await fastFile__namespace.readExisting(challengeFilename);
+    const fdFrom = await fastFile.readExisting(challengeFilename);
 
 
     const sG1 = curve.F1.n64*8*2;
@@ -2149,10 +2129,10 @@ async function challengeContribute(curve, challengeFilename, responesFileName, e
 
     const rng = await getRandomRng(entropy);
 
-    const fdTo = await fastFile__namespace.createOverride(responesFileName);
+    const fdTo = await fastFile.createOverride(responesFileName);
 
     // Calculate the hash
-    const challengeHasher = Blake2b__default["default"](64);
+    const challengeHasher = Blake2b__default['default'](64);
     for (let i=0; i<fdFrom.totalSize; i+= fdFrom.pageSize) {
         if (logger) logger.debug(`Hashing challenge ${i}/${fdFrom.totalSize}`);
         const s = Math.min(fdFrom.totalSize - i, fdFrom.pageSize);
@@ -2178,7 +2158,7 @@ async function challengeContribute(curve, challengeFilename, responesFileName, e
         });
     }
 
-    const responseHasher = Blake2b__default["default"](64);
+    const responseHasher = Blake2b__default['default'](64);
 
     await fdTo.write(challengeHash);
     responseHasher.update(challengeHash);
@@ -2220,7 +2200,7 @@ async function challengeContribute(curve, challengeFilename, responesFileName, e
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,numIterationsExp, logger) {
+async function beacon(oldPtauFilename, newPTauFilename, name,  beaconHashStr,numIterationsExp, logger) {
     const beaconHash = hex2ByteArray(beaconHashStr);
     if (   (beaconHash.byteLength == 0)
         || (beaconHash.byteLength*2 !=beaconHashStr.length))
@@ -2240,9 +2220,9 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
     }
 
 
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
-    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power, ceremonyPower} = await readPTauHeader(fdOld, sections);
     if (power != ceremonyPower) {
         if (logger) logger.error("This file has been reduced. You cannot contribute into a reduced file.");
@@ -2269,10 +2249,10 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
 
     curContribution.key = keyFromBeacon(curve, lastChallengeHash, beaconHash, numIterationsExp);
 
-    const responseHasher = new Blake2b__default["default"](64);
+    const responseHasher = new Blake2b__default['default'](64);
     responseHasher.update(lastChallengeHash);
 
-    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 7);
+    const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 7);
     await writePTauHeader(fdNew, curve, power);
 
     const startSections = [];
@@ -2300,7 +2280,7 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
 
     if (logger) logger.info(formatHash(hashResponse, "Contribution Response Hash imported: "));
 
-    const nextChallengeHasher = new Blake2b__default["default"](64);
+    const nextChallengeHasher = new Blake2b__default['default'](64);
     nextChallengeHasher.update(hashResponse);
 
     await hashSection(fdNew, "G1", 2, (2 ** power) * 2 -1, "tauG1", logger);
@@ -2326,7 +2306,7 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
         const res = [];
         fdOld.pos = sections[sectionId][0].p;
 
-        await binFileUtils__namespace.startWriteSection(fdNew, sectionId);
+        await binFileUtils.startWriteSection(fdNew, sectionId);
 
         startSections[sectionId] = fdNew.pos;
 
@@ -2358,7 +2338,7 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
             t = curve.Fr.mul(t, curve.Fr.exp(inc, n));
         }
 
-        await binFileUtils__namespace.endWriteSection(fdNew);
+        await binFileUtils.endWriteSection(fdNew);
 
         return res;
     }
@@ -2408,9 +2388,9 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
 */
 
 async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logger) {
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
-    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power, ceremonyPower} = await readPTauHeader(fdOld, sections);
     if (power != ceremonyPower) {
         if (logger) logger.error("This file has been reduced. You cannot contribute into a reduced file.");
@@ -2441,10 +2421,10 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
     curContribution.key = createPTauKey(curve, lastChallengeHash, rng);
 
 
-    const responseHasher = new Blake2b__default["default"](64);
+    const responseHasher = new Blake2b__default['default'](64);
     responseHasher.update(lastChallengeHash);
 
-    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 7);
+    const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 7);
     await writePTauHeader(fdNew, curve, power);
 
     const startSections = [];
@@ -2472,7 +2452,7 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
 
     if (logger) logger.info(formatHash(hashResponse, "Contribution Response Hash imported: "));
 
-    const nextChallengeHasher = new Blake2b__default["default"](64);
+    const nextChallengeHasher = new Blake2b__default['default'](64);
     nextChallengeHasher.update(hashResponse);
 
     await hashSection(fdNew, "G1", 2, (2 ** power) * 2 -1, "tauG1");
@@ -2498,7 +2478,7 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
         const res = [];
         fdOld.pos = sections[sectionId][0].p;
 
-        await binFileUtils__namespace.startWriteSection(fdNew, sectionId);
+        await binFileUtils.startWriteSection(fdNew, sectionId);
 
         startSections[sectionId] = fdNew.pos;
 
@@ -2530,7 +2510,7 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
             t = curve.Fr.mul(t, curve.Fr.exp(inc, n));
         }
 
-        await binFileUtils__namespace.endWriteSection(fdNew);
+        await binFileUtils.endWriteSection(fdNew);
 
         return res;
     }
@@ -2583,18 +2563,18 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
 
 async function preparePhase2(oldPtauFilename, newPTauFilename, logger) {
 
-    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power} = await readPTauHeader(fdOld, sections);
 
-    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 11);
+    const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 11);
     await writePTauHeader(fdNew, curve, power);
 
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 2);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 3);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 4);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 5);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 6);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 7);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 2);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 3);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 4);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 5);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 6);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 7);
 
     await processSection(2, 12, "G1", "tauG1" );
     await processSection(3, 13, "G2", "tauG2" );
@@ -2611,7 +2591,7 @@ async function preparePhase2(oldPtauFilename, newPTauFilename, logger) {
     async function processSection(oldSectionId, newSectionId, Gstr, sectionName) {
         if (logger) logger.debug("Starting section: "+sectionName);
 
-        await binFileUtils__namespace.startWriteSection(fdNew, newSectionId);
+        await binFileUtils.startWriteSection(fdNew, newSectionId);
 
         for (let p=0; p<=power; p++) {
             await processSectionPower(p);
@@ -2621,27 +2601,27 @@ async function preparePhase2(oldPtauFilename, newPTauFilename, logger) {
             await processSectionPower(power+1);
         }
 
-        await binFileUtils__namespace.endWriteSection(fdNew);
+        await binFileUtils.endWriteSection(fdNew);
 
 
         async function processSectionPower(p) {
             const nPoints = 2 ** p;
             const G = curve[Gstr];
-            curve.Fr;
+            const Fr = curve.Fr;
             const sGin = G.F.n8*2;
-            G.F.n8*3;
+            const sGmid = G.F.n8*3;
 
             let buff;
             buff = new ffjavascript.BigBuffer(nPoints*sGin);
 
-            await binFileUtils__namespace.startReadUniqueSection(fdOld, sections, oldSectionId);
+            await binFileUtils.startReadUniqueSection(fdOld, sections, oldSectionId);
             if ((oldSectionId == 2)&&(p==power+1)) {
                 await fdOld.readToBuffer(buff, 0,(nPoints-1)*sGin );
                 buff.set(curve.G1.zeroAffine, (nPoints-1)*sGin );
             } else {
                 await fdOld.readToBuffer(buff, 0,nPoints*sGin );
             }
-            await binFileUtils__namespace.endReadSection(fdOld, true);
+            await binFileUtils.endReadSection(fdOld, true);
 
 
             buff = await G.lagrangeEvaluations(buff, "affine", "affine", logger, sectionName);
@@ -2721,7 +2701,7 @@ async function preparePhase2(oldPtauFilename, newPTauFilename, logger) {
 
 async function truncate(ptauFilename, template, logger) {
 
-    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(ptauFilename, "ptau", 1);
+    const {fd: fdOld, sections} = await binFileUtils.readBinFile(ptauFilename, "ptau", 1);
     const {curve, power, ceremonyPower} = await readPTauHeader(fdOld, sections);
 
     const sG1 = curve.G1.F.n8*2;
@@ -2742,19 +2722,19 @@ async function truncate(ptauFilename, template, logger) {
 
         if (logger) logger.debug("Writing Power: "+sP);
 
-        const fdNew = await binFileUtils__namespace.createBinFile(template + sP + ".ptau", "ptau", 1, 11);
+        const fdNew = await binFileUtils.createBinFile(template + sP + ".ptau", "ptau", 1, 11);
         await writePTauHeader(fdNew, curve, p, ceremonyPower);
 
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 2, ((2 ** p)*2-1) * sG1 ); // tagG1
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 3, (2 ** p) * sG2); // tauG2
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 4, (2 ** p) * sG1); // alfaTauG1
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 5, (2 ** p) * sG1); // betaTauG1
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 6,  sG2); // betaTauG2
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 7); // contributions
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 12, ((2 ** (p+1))*2 -1) * sG1); // L_tauG1
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 13, ((2 ** p)*2 -1) * sG2); // L_tauG2
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 14, ((2 ** p)*2 -1) * sG1); // L_alfaTauG1
-        await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 15, ((2 ** p)*2 -1) * sG1); // L_betaTauG1
+        await binFileUtils.copySection(fdOld, sections, fdNew, 2, ((2 ** p)*2-1) * sG1 ); // tagG1
+        await binFileUtils.copySection(fdOld, sections, fdNew, 3, (2 ** p) * sG2); // tauG2
+        await binFileUtils.copySection(fdOld, sections, fdNew, 4, (2 ** p) * sG1); // alfaTauG1
+        await binFileUtils.copySection(fdOld, sections, fdNew, 5, (2 ** p) * sG1); // betaTauG1
+        await binFileUtils.copySection(fdOld, sections, fdNew, 6,  sG2); // betaTauG2
+        await binFileUtils.copySection(fdOld, sections, fdNew, 7); // contributions
+        await binFileUtils.copySection(fdOld, sections, fdNew, 12, ((2 ** (p+1))*2 -1) * sG1); // L_tauG1
+        await binFileUtils.copySection(fdOld, sections, fdNew, 13, ((2 ** p)*2 -1) * sG2); // L_tauG2
+        await binFileUtils.copySection(fdOld, sections, fdNew, 14, ((2 ** p)*2 -1) * sG1); // L_alfaTauG1
+        await binFileUtils.copySection(fdOld, sections, fdNew, 15, ((2 ** p)*2 -1) * sG1); // L_betaTauG1
 
         await fdNew.close();
     }
@@ -2783,25 +2763,25 @@ async function truncate(ptauFilename, template, logger) {
 
 async function convert(oldPtauFilename, newPTauFilename, logger) {
 
-    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power} = await readPTauHeader(fdOld, sections);
 
-    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 11);
+    const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 11);
     await writePTauHeader(fdNew, curve, power);
 
     // const fdTmp = await fastFile.createOverride(newPTauFilename+ ".tmp");
 
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 2);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 3);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 4);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 5);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 6);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 7);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 2);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 3);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 4);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 5);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 6);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 7);
 
     await processSection(2, 12, "G1", "tauG1" );
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 13);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 14);
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 15);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 13);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 14);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 15);
 
     await fdOld.close();
     await fdNew.close();
@@ -2813,23 +2793,23 @@ async function convert(oldPtauFilename, newPTauFilename, logger) {
     async function processSection(oldSectionId, newSectionId, Gstr, sectionName) {
         if (logger) logger.debug("Starting section: "+sectionName);
 
-        await binFileUtils__namespace.startWriteSection(fdNew, newSectionId);
+        await binFileUtils.startWriteSection(fdNew, newSectionId);
 
         const size = sections[newSectionId][0].size;
         const chunkSize = fdOld.pageSize;
-        await binFileUtils__namespace.startReadUniqueSection(fdOld, sections, newSectionId);
+        await binFileUtils.startReadUniqueSection(fdOld, sections, newSectionId);
         for (let p=0; p<size; p+=chunkSize) {
             const l = Math.min(size -p, chunkSize);
             const buff = await fdOld.read(l);
             await fdNew.write(buff);
         }
-        await binFileUtils__namespace.endReadSection(fdOld);
+        await binFileUtils.endReadSection(fdOld);
 
         if (oldSectionId == 2) {
             await processSectionPower(power+1);
         }
 
-        await binFileUtils__namespace.endWriteSection(fdNew);
+        await binFileUtils.endWriteSection(fdNew);
 
         async function processSectionPower(p) {
             const nPoints = 2 ** p;
@@ -2839,14 +2819,14 @@ async function convert(oldPtauFilename, newPTauFilename, logger) {
             let buff;
             buff = new ffjavascript.BigBuffer(nPoints*sGin);
 
-            await binFileUtils__namespace.startReadUniqueSection(fdOld, sections, oldSectionId);
+            await binFileUtils.startReadUniqueSection(fdOld, sections, oldSectionId);
             if ((oldSectionId == 2)&&(p==power+1)) {
                 await fdOld.readToBuffer(buff, 0,(nPoints-1)*sGin );
                 buff.set(curve.G1.zeroAffine, (nPoints-1)*sGin );
             } else {
                 await fdOld.readToBuffer(buff, 0,nPoints*sGin );
             }
-            await binFileUtils__namespace.endReadSection(fdOld, true);
+            await binFileUtils.endReadSection(fdOld, true);
 
             buff = await G.lagrangeEvaluations(buff, "affine", "affine", logger, sectionName);
             await fdNew.write(buff);
@@ -2927,7 +2907,7 @@ async function convert(oldPtauFilename, newPTauFilename, logger) {
 */
 
 async function exportJson(pTauFilename, verbose) {
-    const {fd, sections} = await binFileUtils__namespace.readBinFile(pTauFilename, "ptau", 1);
+    const {fd, sections} = await binFileUtils.readBinFile(pTauFilename, "ptau", 1);
 
     const {curve, power} = await readPTauHeader(fd, sections);
 
@@ -2958,13 +2938,13 @@ async function exportJson(pTauFilename, verbose) {
         const sG = G.F.n8*2;
 
         const res = [];
-        await binFileUtils__namespace.startReadUniqueSection(fd, sections, sectionId);
+        await binFileUtils.startReadUniqueSection(fd, sections, sectionId);
         for (let i=0; i< nPoints; i++) {
             if ((verbose)&&i&&(i%10000 == 0)) console.log(`${sectionName}: ` + i);
             const buff = await fd.read(sG);
             res.push(G.fromRprLEM(buff, 0));
         }
-        await binFileUtils__namespace.endReadSection(fd);
+        await binFileUtils.endReadSection(fd);
 
         return res;
     }
@@ -2974,7 +2954,7 @@ async function exportJson(pTauFilename, verbose) {
         const sG = G.F.n8*2;
 
         const res = [];
-        await binFileUtils__namespace.startReadUniqueSection(fd, sections, sectionId);
+        await binFileUtils.startReadUniqueSection(fd, sections, sectionId);
         for (let p=0; p<=power; p++) {
             if (verbose) console.log(`${sectionName}: Power: ${p}`);
             res[p] = [];
@@ -2985,7 +2965,7 @@ async function exportJson(pTauFilename, verbose) {
                 res[p].push(G.fromRprLEM(buff, 0));
             }
         }
-        await binFileUtils__namespace.endReadSection(fd);
+        await binFileUtils.endReadSection(fd);
         return res;
     }
 
@@ -3116,8 +3096,8 @@ async function newZKey(r1csName, ptauName, zkeyName, logger) {
     const TAU_G2 = 1;
     const ALPHATAU_G1 = 2;
     const BETATAU_G1 = 3;
-    await Blake2b__default["default"].ready();
-    const csHasher = Blake2b__default["default"](64);
+    await Blake2b__default['default'].ready();
+    const csHasher = Blake2b__default['default'](64);
 
     const {fd: fdPTau, sections: sectionsPTau} = await binFileUtils.readBinFile(ptauName, "ptau", 1, 1<<22, 1<<24);
     const {curve, power} = await readPTauHeader(fdPTau, sectionsPTau);
@@ -3686,16 +3666,16 @@ async function writeHeader(fd, zkey) {
 
     // Write the header
     ///////////
-    await binFileUtils__namespace.startWriteSection(fd, 1);
+    await binFileUtils.startWriteSection(fd, 1);
     await fd.writeULE32(1); // Groth
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
     // Write the Groth header section
     ///////////
 
     const curve = await getCurveFromQ(zkey.q);
 
-    await binFileUtils__namespace.startWriteSection(fd, 2);
+    await binFileUtils.startWriteSection(fd, 2);
     const primeQ = curve.q;
     const n8q = (Math.floor( (ffjavascript.Scalar.bitLength(primeQ) - 1) / 64) +1)*8;
 
@@ -3703,9 +3683,9 @@ async function writeHeader(fd, zkey) {
     const n8r = (Math.floor( (ffjavascript.Scalar.bitLength(primeR) - 1) / 64) +1)*8;
 
     await fd.writeULE32(n8q);
-    await binFileUtils__namespace.writeBigInt(fd, primeQ, n8q);
+    await binFileUtils.writeBigInt(fd, primeQ, n8q);
     await fd.writeULE32(n8r);
-    await binFileUtils__namespace.writeBigInt(fd, primeR, n8r);
+    await binFileUtils.writeBigInt(fd, primeR, n8r);
     await fd.writeULE32(zkey.nVars);                         // Total number of bars
     await fd.writeULE32(zkey.nPublic);                       // Total number of public vars (not including ONE)
     await fd.writeULE32(zkey.domainSize);                  // domainSize
@@ -3716,7 +3696,7 @@ async function writeHeader(fd, zkey) {
     await writeG1(fd, curve, zkey.vk_delta_1);
     await writeG2(fd, curve, zkey.vk_delta_2);
 
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
 
 }
@@ -3746,12 +3726,12 @@ async function readG2(fd, curve, toObject) {
 }
 
 
-async function readHeader$1(fd, sections, toObject) {
+async function readHeader(fd, sections, toObject) {
     // Read Header
     /////////////////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 1);
+    await binFileUtils.startReadUniqueSection(fd, sections, 1);
     const protocolId = await fd.readULE32();
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     if (protocolId == 1) {
         return await readHeaderGroth16(fd, sections, toObject);
@@ -3772,14 +3752,14 @@ async function readHeaderGroth16(fd, sections, toObject) {
 
     // Read Groth Header
     /////////////////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 2);
+    await binFileUtils.startReadUniqueSection(fd, sections, 2);
     const n8q = await fd.readULE32();
     zkey.n8q = n8q;
-    zkey.q = await binFileUtils__namespace.readBigInt(fd, n8q);
+    zkey.q = await binFileUtils.readBigInt(fd, n8q);
 
     const n8r = await fd.readULE32();
     zkey.n8r = n8r;
-    zkey.r = await binFileUtils__namespace.readBigInt(fd, n8r);
+    zkey.r = await binFileUtils.readBigInt(fd, n8r);
 
     let curve = await getCurveFromQ(zkey.q);
 
@@ -3793,7 +3773,7 @@ async function readHeaderGroth16(fd, sections, toObject) {
     zkey.vk_gamma_2 = await readG2(fd, curve, toObject);
     zkey.vk_delta_1 = await readG1(fd, curve, toObject);
     zkey.vk_delta_2 = await readG2(fd, curve, toObject);
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     return zkey;
 
@@ -3809,14 +3789,14 @@ async function readHeaderPlonk(fd, sections, protocol, toObject) {
 
     // Read Plonk Header
     /////////////////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 2);
+    await binFileUtils.startReadUniqueSection(fd, sections, 2);
     const n8q = await fd.readULE32();
     zkey.n8q = n8q;
-    zkey.q = await binFileUtils__namespace.readBigInt(fd, n8q);
+    zkey.q = await binFileUtils.readBigInt(fd, n8q);
 
     const n8r = await fd.readULE32();
     zkey.n8r = n8r;
-    zkey.r = await binFileUtils__namespace.readBigInt(fd, n8r);
+    zkey.r = await binFileUtils.readBigInt(fd, n8r);
 
     let curve = await getCurveFromQ(zkey.q);
 
@@ -3839,15 +3819,15 @@ async function readHeaderPlonk(fd, sections, protocol, toObject) {
     zkey.S3 = await readG1(fd, curve, toObject);
     zkey.X_2 = await readG2(fd, curve, toObject);
 
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     return zkey;
 }
 
 async function readZKey(fileName, toObject) {
-    const {fd, sections} = await binFileUtils__namespace.readBinFile(fileName, "zkey", 1);
+    const {fd, sections} = await binFileUtils.readBinFile(fileName, "zkey", 1);
 
-    const zkey = await readHeader$1(fd, sections, "groth16");
+    const zkey = await readHeader(fd, sections, "groth16");
 
     const Fr = new ffjavascript.F1Field(zkey.r);
     const Rr = ffjavascript.Scalar.mod(ffjavascript.Scalar.shl(1, zkey.n8r*8), zkey.r);
@@ -3858,18 +3838,18 @@ async function readZKey(fileName, toObject) {
 
     // Read IC Section
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 3);
+    await binFileUtils.startReadUniqueSection(fd, sections, 3);
     zkey.IC = [];
     for (let i=0; i<= zkey.nPublic; i++) {
         const P = await readG1(fd, curve, toObject);
         zkey.IC.push(P);
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
 
     // Read Coefs
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 4);
+    await binFileUtils.startReadUniqueSection(fd, sections, 4);
     const nCCoefs = await fd.readULE32();
     zkey.ccoefs = [];
     for (let i=0; i<nCCoefs; i++) {
@@ -3884,77 +3864,77 @@ async function readZKey(fileName, toObject) {
             value: v
         });
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     // Read A points
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 5);
+    await binFileUtils.startReadUniqueSection(fd, sections, 5);
     zkey.A = [];
     for (let i=0; i<zkey.nVars; i++) {
         const A = await readG1(fd, curve, toObject);
         zkey.A[i] = A;
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
 
     // Read B1
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 6);
+    await binFileUtils.startReadUniqueSection(fd, sections, 6);
     zkey.B1 = [];
     for (let i=0; i<zkey.nVars; i++) {
         const B1 = await readG1(fd, curve, toObject);
 
         zkey.B1[i] = B1;
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
 
     // Read B2 points
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 7);
+    await binFileUtils.startReadUniqueSection(fd, sections, 7);
     zkey.B2 = [];
     for (let i=0; i<zkey.nVars; i++) {
         const B2 = await readG2(fd, curve, toObject);
         zkey.B2[i] = B2;
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
 
     // Read C points
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 8);
+    await binFileUtils.startReadUniqueSection(fd, sections, 8);
     zkey.C = [];
     for (let i=zkey.nPublic+1; i<zkey.nVars; i++) {
         const C = await readG1(fd, curve, toObject);
 
         zkey.C[i] = C;
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
 
     // Read H points
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 9);
+    await binFileUtils.startReadUniqueSection(fd, sections, 9);
     zkey.hExps = [];
     for (let i=0; i<zkey.domainSize; i++) {
         const H = await readG1(fd, curve, toObject);
         zkey.hExps.push(H);
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     await fd.close();
 
     return zkey;
 
     async function readFr2(/* toObject */) {
-        const n = await binFileUtils__namespace.readBigInt(fd, zkey.n8r);
+        const n = await binFileUtils.readBigInt(fd, zkey.n8r);
         return Fr.mul(n, Rri2);
     }
 
 }
 
 
-async function readContribution(fd, curve, toObject) {
+async function readContribution$1(fd, curve, toObject) {
     const c = {delta:{}};
     c.deltaAfter = await readG1(fd, curve, toObject);
     c.delta.g1_s = await readG1(fd, curve, toObject);
@@ -3993,20 +3973,20 @@ async function readContribution(fd, curve, toObject) {
 
 
 async function readMPCParams(fd, curve, sections) {
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 10);
+    await binFileUtils.startReadUniqueSection(fd, sections, 10);
     const res = { contributions: []};
     res.csHash = await fd.read(64);
     const n = await fd.readULE32();
     for (let i=0; i<n; i++) {
-        const c = await readContribution(fd, curve);
+        const c = await readContribution$1(fd, curve);
         res.contributions.push(c);
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     return res;
 }
 
-async function writeContribution(fd, curve, c) {
+async function writeContribution$1(fd, curve, c) {
     await writeG1(fd, curve, c.deltaAfter);
     await writeG1(fd, curve, c.delta.g1_s);
     await writeG1(fd, curve, c.delta.g1_sx);
@@ -4040,13 +4020,13 @@ async function writeContribution(fd, curve, c) {
 }
 
 async function writeMPCParams(fd, curve, mpcParams) {
-    await binFileUtils__namespace.startWriteSection(fd, 10);
+    await binFileUtils.startWriteSection(fd, 10);
     await fd.write(mpcParams.csHash);
     await fd.writeULE32(mpcParams.contributions.length);
     for (let i=0; i<mpcParams.contributions.length; i++) {
-        await writeContribution(fd, curve,mpcParams.contributions[i]);
+        await writeContribution$1(fd, curve,mpcParams.contributions[i]);
     }
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 }
 
 function hashG1(hasher, curve, p) {
@@ -4071,8 +4051,8 @@ function hashPubKey(hasher, curve, c) {
 
 async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
 
-    const {fd: fdZKey, sections: sectionsZKey} = await binFileUtils__namespace.readBinFile(zkeyName, "zkey", 2);
-    const zkey = await readHeader$1(fdZKey, sectionsZKey);
+    const {fd: fdZKey, sections: sectionsZKey} = await binFileUtils.readBinFile(zkeyName, "zkey", 2);
+    const zkey = await readHeader(fdZKey, sectionsZKey);
     if (zkey.protocol != "groth16") {
         throw new Error("zkey file is not groth16");
     }
@@ -4083,7 +4063,7 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
 
     const mpcParams = await readMPCParams(fdZKey, curve, sectionsZKey);
 
-    const fdMPCParams = await fastFile__namespace.createOverride(mpcparamsName);
+    const fdMPCParams = await fastFile.createOverride(mpcparamsName);
 
     /////////////////////
     // Verification Key Section
@@ -4097,7 +4077,7 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
 
     // IC
     let buffBasesIC;
-    buffBasesIC = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 3);
+    buffBasesIC = await binFileUtils.readSection(fdZKey, sectionsZKey, 3);
     buffBasesIC = await curve.G1.batchLEMtoU(buffBasesIC);
 
     await writePointArray("G1", buffBasesIC);
@@ -4105,7 +4085,7 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
     /////////////////////
     // h Section
     /////////////////////
-    const buffBasesH_Lodd = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 9);
+    const buffBasesH_Lodd = await binFileUtils.readSection(fdZKey, sectionsZKey, 9);
 
     let buffBasesH_Tau;
     buffBasesH_Tau = await curve.G1.fft(buffBasesH_Lodd, "affine", "jacobian", logger);
@@ -4120,7 +4100,7 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
     // L section
     /////////////////////
     let buffBasesC;
-    buffBasesC = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 8);
+    buffBasesC = await binFileUtils.readSection(fdZKey, sectionsZKey, 8);
     buffBasesC = await curve.G1.batchLEMtoU(buffBasesC);
     await writePointArray("G1", buffBasesC);
 
@@ -4128,7 +4108,7 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
     // A Section (C section)
     /////////////////////
     let buffBasesA;
-    buffBasesA = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 5);
+    buffBasesA = await binFileUtils.readSection(fdZKey, sectionsZKey, 5);
     buffBasesA = await curve.G1.batchLEMtoU(buffBasesA);
     await writePointArray("G1", buffBasesA);
 
@@ -4136,7 +4116,7 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
     // B1 Section
     /////////////////////
     let buffBasesB1;
-    buffBasesB1 = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 6);
+    buffBasesB1 = await binFileUtils.readSection(fdZKey, sectionsZKey, 6);
     buffBasesB1 = await curve.G1.batchLEMtoU(buffBasesB1);
     await writePointArray("G1", buffBasesB1);
 
@@ -4144,7 +4124,7 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
     // B2 Section
     /////////////////////
     let buffBasesB2;
-    buffBasesB2 = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 7);
+    buffBasesB2 = await binFileUtils.readSection(fdZKey, sectionsZKey, 7);
     buffBasesB2 = await curve.G2.batchLEMtoU(buffBasesB2);
     await writePointArray("G2", buffBasesB2);
 
@@ -4224,8 +4204,8 @@ async function phase2exportMPCParams(zkeyName, mpcparamsName, logger) {
 
 async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, name, logger) {
 
-    const {fd: fdZKeyOld, sections: sectionsZKeyOld} = await binFileUtils__namespace.readBinFile(zkeyNameOld, "zkey", 2);
-    const zkeyHeader = await readHeader$1(fdZKeyOld, sectionsZKeyOld, false);
+    const {fd: fdZKeyOld, sections: sectionsZKeyOld} = await binFileUtils.readBinFile(zkeyNameOld, "zkey", 2);
+    const zkeyHeader = await readHeader(fdZKeyOld, sectionsZKeyOld, false);
     if (zkeyHeader.protocol != "groth16") {
         throw new Error("zkey file is not groth16");
     }
@@ -4237,7 +4217,7 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
     const oldMPCParams = await readMPCParams(fdZKeyOld, curve, sectionsZKeyOld);
     const newMPCParams = {};
 
-    const fdMPCParams = await fastFile__namespace.readExisting(mpcparamsName);
+    const fdMPCParams = await fastFile.readExisting(mpcparamsName);
 
     fdMPCParams.pos =
         sG1*3 + sG2*3 +                     // vKey
@@ -4297,7 +4277,7 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
         }
     }
 
-    const fdZKeyNew = await binFileUtils__namespace.createBinFile(zkeyNameNew, "zkey", 1, 10);
+    const fdZKeyNew = await binFileUtils.createBinFile(zkeyNameNew, "zkey", 1, 10);
     fdMPCParams.pos = 0;
 
     // Header
@@ -4317,10 +4297,10 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
         return false;
     }
     fdMPCParams.pos += sG1*(zkeyHeader.nPublic+1);
-    await binFileUtils__namespace.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 3);
+    await binFileUtils.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 3);
 
     // Coeffs (Keep original)
-    await binFileUtils__namespace.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 4);
+    await binFileUtils.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 4);
 
     // H Section
     const nH = await fdMPCParams.readUBE32();
@@ -4339,9 +4319,9 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
     const wInv = curve.Fr.inv(curve.Fr.w[zkeyHeader.power+1]);
     buffH = await curve.G1.batchApplyKey(buffH, n2Inv, wInv, "affine", "jacobian", logger);
     buffH = await curve.G1.ifft(buffH, "jacobian", "affine", logger);
-    await binFileUtils__namespace.startWriteSection(fdZKeyNew, 9);
+    await binFileUtils.startWriteSection(fdZKeyNew, 9);
     await fdZKeyNew.write(buffH);
-    await binFileUtils__namespace.endWriteSection(fdZKeyNew);
+    await binFileUtils.endWriteSection(fdZKeyNew);
 
     // C Secion (L section)
     const nL = await fdMPCParams.readUBE32();
@@ -4353,9 +4333,9 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
     let buffL;
     buffL = await fdMPCParams.read(sG1*(zkeyHeader.nVars-zkeyHeader.nPublic-1));
     buffL = await curve.G1.batchUtoLEM(buffL);
-    await binFileUtils__namespace.startWriteSection(fdZKeyNew, 8);
+    await binFileUtils.startWriteSection(fdZKeyNew, 8);
     await fdZKeyNew.write(buffL);
-    await binFileUtils__namespace.endWriteSection(fdZKeyNew);
+    await binFileUtils.endWriteSection(fdZKeyNew);
 
     // A Section
     const nA = await fdMPCParams.readUBE32();
@@ -4365,7 +4345,7 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
         return false;
     }
     fdMPCParams.pos += sG1*(zkeyHeader.nVars);
-    await binFileUtils__namespace.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 5);
+    await binFileUtils.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 5);
 
     // B1 Section
     const nB1 = await fdMPCParams.readUBE32();
@@ -4375,7 +4355,7 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
         return false;
     }
     fdMPCParams.pos += sG1*(zkeyHeader.nVars);
-    await binFileUtils__namespace.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 6);
+    await binFileUtils.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 6);
 
     // B2 Section
     const nB2 = await fdMPCParams.readUBE32();
@@ -4385,7 +4365,7 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
         return false;
     }
     fdMPCParams.pos += sG2*(zkeyHeader.nVars);
-    await binFileUtils__namespace.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 7);
+    await binFileUtils.copySection(fdZKeyOld, sectionsZKeyOld, fdZKeyNew, 7);
 
     await writeMPCParams(fdZKeyNew, curve, newMPCParams);
 
@@ -4436,17 +4416,17 @@ async function phase2importMPCParams(zkeyNameOld, mpcparamsName, zkeyNameNew, na
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const sameRatio = sameRatio$2;
+const sameRatio$2 = sameRatio;
 
 
 
 async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, logger) {
 
     let sr;
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
-    const {fd, sections} = await binFileUtils__namespace.readBinFile(zkeyFileName, "zkey", 2);
-    const zkey = await readHeader$1(fd, sections, false);
+    const {fd, sections} = await binFileUtils.readBinFile(zkeyFileName, "zkey", 2);
+    const zkey = await readHeader(fd, sections, false);
     if (zkey.protocol != "groth16") {
         throw new Error("zkey file is not groth16");
     }
@@ -4456,7 +4436,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
 
     const mpcParams = await readMPCParams(fd, curve, sections);
 
-    const accumulatedHasher = Blake2b__default["default"](64);
+    const accumulatedHasher = Blake2b__default['default'](64);
     accumulatedHasher.update(mpcParams.csHash);
     let curDelta = curve.G1.g;
     for (let i=0; i<mpcParams.contributions.length; i++) {
@@ -4473,13 +4453,13 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
 
         const delta_g2_sp = hashToG2(curve, c.transcript);
 
-        sr = await sameRatio(curve, c.delta.g1_s, c.delta.g1_sx, delta_g2_sp, c.delta.g2_spx);
+        sr = await sameRatio$2(curve, c.delta.g1_s, c.delta.g1_sx, delta_g2_sp, c.delta.g2_spx);
         if (sr !== true) {
             console.log(`INVALID(${i}): public key G1 and G2 do not have the same ration `);
             return false;
         }
 
-        sr = await sameRatio(curve, curDelta, c.deltaAfter, delta_g2_sp, c.delta.g2_spx);
+        sr = await sameRatio$2(curve, curDelta, c.deltaAfter, delta_g2_sp, c.delta.g2_spx);
         if (sr !== true) {
             console.log(`INVALID(${i}): deltaAfter does not fillow the public key `);
             return false;
@@ -4502,7 +4482,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
 
         hashPubKey(accumulatedHasher, curve, c);
 
-        const contributionHasher = Blake2b__default["default"](64);
+        const contributionHasher = Blake2b__default['default'](64);
         hashPubKey(contributionHasher, curve, c);
 
         c.contributionHash = contributionHasher.digest();
@@ -4511,8 +4491,8 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
     }
 
 
-    const {fd: fdInit, sections: sectionsInit} = await binFileUtils__namespace.readBinFile(initFileName, "zkey", 2);
-    const zkeyInit = await readHeader$1(fdInit, sectionsInit, false);
+    const {fd: fdInit, sections: sectionsInit} = await binFileUtils.readBinFile(initFileName, "zkey", 2);
+    const zkeyInit = await readHeader(fdInit, sectionsInit, false);
 
     if (zkeyInit.protocol != "groth16") {
         throw new Error("zkeyinit file is not groth16");
@@ -4555,7 +4535,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
         if (logger) logger.error("INVALID:  Invalid delta1");
         return false;
     }
-    sr = await sameRatio(curve, curve.G1.g, curDelta, curve.G2.g, zkey.vk_delta_2);
+    sr = await sameRatio$2(curve, curve.G1.g, curDelta, curve.G2.g, zkey.vk_delta_2);
     if (sr !== true) {
         if (logger) logger.error("INVALID:  Invalid delta2");
         return false;
@@ -4579,31 +4559,31 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
     }
 
     let ss;
-    ss = await binFileUtils__namespace.sectionIsEqual(fd, sections, fdInit, sectionsInit, 3);
+    ss = await binFileUtils.sectionIsEqual(fd, sections, fdInit, sectionsInit, 3);
     if (!ss) {
         if (logger) logger.error("INVALID:  IC section is not identical");
         return false;
     }
 
-    ss = await binFileUtils__namespace.sectionIsEqual(fd, sections, fdInit, sectionsInit, 4);
+    ss = await binFileUtils.sectionIsEqual(fd, sections, fdInit, sectionsInit, 4);
     if (!ss) {
         if (logger) logger.error("Coeffs section is not identical");
         return false;
     }
 
-    ss = await binFileUtils__namespace.sectionIsEqual(fd, sections, fdInit, sectionsInit, 5);
+    ss = await binFileUtils.sectionIsEqual(fd, sections, fdInit, sectionsInit, 5);
     if (!ss) {
         if (logger) logger.error("A section is not identical");
         return false;
     }
 
-    ss = await binFileUtils__namespace.sectionIsEqual(fd, sections, fdInit, sectionsInit, 6);
+    ss = await binFileUtils.sectionIsEqual(fd, sections, fdInit, sectionsInit, 6);
     if (!ss) {
         if (logger) logger.error("B1 section is not identical");
         return false;
     }
 
-    ss = await binFileUtils__namespace.sectionIsEqual(fd, sections, fdInit, sectionsInit, 7);
+    ss = await binFileUtils.sectionIsEqual(fd, sections, fdInit, sectionsInit, 7);
     if (!ss) {
         if (logger) logger.error("B2 section is not identical");
         return false;
@@ -4648,8 +4628,8 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
         const MAX_CHUNK_SIZE = 1<<20;
         const G = curve[groupName];
         const sG = G.F.n8*2;
-        await binFileUtils__namespace.startReadUniqueSection(fd1, sections1, idSection);
-        await binFileUtils__namespace.startReadUniqueSection(fd2, sections2, idSection);
+        await binFileUtils.startReadUniqueSection(fd1, sections1, idSection);
+        await binFileUtils.startReadUniqueSection(fd2, sections2, idSection);
 
         let R1 = G.zero;
         let R2 = G.zero;
@@ -4663,7 +4643,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
             const bases2 = await fd2.read(n*sG);
 
             const scalars = new Uint8Array(4*n);
-            crypto__default["default"].randomFillSync(scalars);
+            crypto__default['default'].randomFillSync(scalars);
 
 
             const r1 = await G.multiExpAffine(bases1, scalars);
@@ -4672,12 +4652,12 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
             R1 = G.add(R1, r1);
             R2 = G.add(R2, r2);
         }
-        await binFileUtils__namespace.endReadSection(fd1);
-        await binFileUtils__namespace.endReadSection(fd2);
+        await binFileUtils.endReadSection(fd1);
+        await binFileUtils.endReadSection(fd2);
 
         if (nPoints == 0) return true;
 
-        sr = await sameRatio(curve, R1, R2, g2sp, g2spx);
+        sr = await sameRatio$2(curve, R1, R2, g2sp, g2spx);
         if (sr !== true) return false;
 
         return true;
@@ -4689,13 +4669,13 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
         const Fr = curve.Fr;
         const sG = G.F.n8*2;
 
-        const {fd: fdPTau, sections: sectionsPTau} = await binFileUtils__namespace.readBinFile(pTauFileName, "ptau", 1);
+        const {fd: fdPTau, sections: sectionsPTau} = await binFileUtils.readBinFile(pTauFileName, "ptau", 1);
 
         let buff_r = new ffjavascript.BigBuffer(zkey.domainSize * zkey.n8r);
 
         const seed= new Array(8);
         for (let i=0; i<8; i++) {
-            seed[i] = crypto__default["default"].randomBytes(4).readUInt32BE(0, true);
+            seed[i] = crypto__default['default'].randomBytes(4).readUInt32BE(0, true);
         }
         const rng = new ffjavascript.ChaCha(seed);
         for (let i=0; i<zkey.domainSize-1; i++) {   // Note that last one is zero
@@ -4742,7 +4722,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
         buff_r = await Fr.fft(buff_r);
         buff_r = await Fr.batchFromMontgomery(buff_r);
 
-        await binFileUtils__namespace.startReadUniqueSection(fd, sections, 9);
+        await binFileUtils.startReadUniqueSection(fd, sections, 9);
         let R2 = G.zero;
         for (let i=0; i<zkey.domainSize; i += MAX_CHUNK_SIZE) {
             if (logger) logger.debug(`H Verificaition(lagrange):  ${i}/${zkey.domainSize}`);
@@ -4754,9 +4734,9 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
 
             R2 = G.add(R2, r);
         }
-        await binFileUtils__namespace.endReadSection(fd);
+        await binFileUtils.endReadSection(fd);
 
-        sr = await sameRatio(curve, R1, R2, zkey.vk_delta_2, zkeyInit.vk_delta_2);
+        sr = await sameRatio$2(curve, R1, R2, zkey.vk_delta_2, zkeyInit.vk_delta_2);
         if (sr !== true) return false;
 
 
@@ -4878,11 +4858,13 @@ async function phase2verifyFromR1cs(r1csFileName, pTauFileName, zkeyFileName, lo
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function phase2contribute(zkeyNameOld, zkeyNameNew, name, entropy, logger) {
-    await Blake2b__default["default"].ready();
+async function phase2contribute(zkeyNameOld, zkeyNameNew, name, entropy, logger, options) {
+    // TODO: Validate options.
 
-    const {fd: fdOld, sections: sections} = await binFileUtils__namespace.readBinFile(zkeyNameOld, "zkey", 2);
-    const zkey = await readHeader$1(fdOld, sections);
+    await Blake2b__default['default'].ready();
+
+    const {fd: fdOld, sections: sections} = await binFileUtils.readBinFile(zkeyNameOld, "zkey", 2);
+    const zkey = await readHeader(fdOld, sections);
     if (zkey.protocol != "groth16") {
         throw new Error("zkey file is not groth16");
     }
@@ -4891,12 +4873,12 @@ async function phase2contribute(zkeyNameOld, zkeyNameNew, name, entropy, logger)
 
     const mpcParams = await readMPCParams(fdOld, curve, sections);
 
-    const fdNew = await binFileUtils__namespace.createBinFile(zkeyNameNew, "zkey", 1, 10);
+    const fdNew = await binFileUtils.createBinFile(zkeyNameNew, "zkey", 1, 10);
 
 
     const rng = await getRandomRng(entropy);
 
-    const transcriptHasher = Blake2b__default["default"](64);
+    const transcriptHasher = Blake2b__default['default'](64);
     transcriptHasher.update(mpcParams.csHash);
     for (let i=0; i<mpcParams.contributions.length; i++) {
         hashPubKey(transcriptHasher, curve, mpcParams.contributions[i]);
@@ -4926,19 +4908,19 @@ async function phase2contribute(zkeyNameOld, zkeyNameNew, name, entropy, logger)
     await writeHeader(fdNew, zkey);
 
     // IC
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 3);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 3);
 
     // Coeffs (Keep original)
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 4);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 4);
 
     // A Section
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 5);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 5);
 
     // B1 Section
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 6);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 6);
 
     // B2 Section
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 7);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 7);
 
     let totalPoints = 0, sectionCount = 0, progressOptions = undefined;
     if (options && options.progressCallback) {
@@ -4966,7 +4948,7 @@ async function phase2contribute(zkeyNameOld, zkeyNameNew, name, entropy, logger)
     await fdOld.close();
     await fdNew.close();
 
-    const contributionHasher = Blake2b__default["default"](64);
+    const contributionHasher = Blake2b__default['default'](64);
     hashPubKey(contributionHasher, curve, curContribution);
 
     const contributionHash = contributionHasher.digest();
@@ -4997,8 +4979,8 @@ async function phase2contribute(zkeyNameOld, zkeyNameNew, name, entropy, logger)
 */
 
 
-async function beacon(zkeyNameOld, zkeyNameNew, name, beaconHashStr, numIterationsExp, logger) {
-    await Blake2b__default["default"].ready();
+async function beacon$1(zkeyNameOld, zkeyNameNew, name, beaconHashStr, numIterationsExp, logger) {
+    await Blake2b__default['default'].ready();
 
     const beaconHash = hex2ByteArray(beaconHashStr);
     if (   (beaconHash.byteLength == 0)
@@ -5019,8 +5001,8 @@ async function beacon(zkeyNameOld, zkeyNameNew, name, beaconHashStr, numIteratio
     }
 
 
-    const {fd: fdOld, sections: sections} = await binFileUtils__namespace.readBinFile(zkeyNameOld, "zkey", 2);
-    const zkey = await readHeader$1(fdOld, sections);
+    const {fd: fdOld, sections: sections} = await binFileUtils.readBinFile(zkeyNameOld, "zkey", 2);
+    const zkey = await readHeader(fdOld, sections);
 
     if (zkey.protocol != "groth16") {
         throw new Error("zkey file is not groth16");
@@ -5031,11 +5013,11 @@ async function beacon(zkeyNameOld, zkeyNameNew, name, beaconHashStr, numIteratio
 
     const mpcParams = await readMPCParams(fdOld, curve, sections);
 
-    const fdNew = await binFileUtils__namespace.createBinFile(zkeyNameNew, "zkey", 1, 10);
+    const fdNew = await binFileUtils.createBinFile(zkeyNameNew, "zkey", 1, 10);
 
     const rng = await rngFromBeaconParams(beaconHash, numIterationsExp);
 
-    const transcriptHasher = Blake2b__default["default"](64);
+    const transcriptHasher = Blake2b__default['default'](64);
     transcriptHasher.update(mpcParams.csHash);
     for (let i=0; i<mpcParams.contributions.length; i++) {
         hashPubKey(transcriptHasher, curve, mpcParams.contributions[i]);
@@ -5068,19 +5050,19 @@ async function beacon(zkeyNameOld, zkeyNameNew, name, beaconHashStr, numIteratio
     await writeHeader(fdNew, zkey);
 
     // IC
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 3);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 3);
 
     // Coeffs (Keep original)
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 4);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 4);
 
     // A Section
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 5);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 5);
 
     // B1 Section
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 6);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 6);
 
     // B2 Section
-    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 7);
+    await binFileUtils.copySection(fdOld, sections, fdNew, 7);
 
     const invDelta = curve.Fr.inv(curContribution.delta.prvKey);
     await applyKeyToSection(fdOld, sections, fdNew, 8, curve, "G1", invDelta, curve.Fr.e(1), "L Section", logger);
@@ -5091,7 +5073,7 @@ async function beacon(zkeyNameOld, zkeyNameNew, name, beaconHashStr, numIteratio
     await fdOld.close();
     await fdNew.close();
 
-    const contributionHasher = Blake2b__default["default"](64);
+    const contributionHasher = Blake2b__default['default'](64);
     hashPubKey(contributionHasher, curve, curContribution);
 
     const contribuionHash = contributionHasher.digest();
@@ -5101,7 +5083,7 @@ async function beacon(zkeyNameOld, zkeyNameNew, name, beaconHashStr, numIteratio
     return contribuionHash;
 }
 
-async function zkeyExportJson$1(zkeyFileName) {
+async function zkeyExportJson(zkeyFileName) {
 
     const zKey = await readZKey(zkeyFileName, true);
 
@@ -5128,7 +5110,7 @@ async function zkeyExportJson$1(zkeyFileName) {
 */
 
 async function bellmanContribute(curve, challengeFilename, responesFileName, entropy, logger) {
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
     const rng = await getRandomRng(entropy);
 
@@ -5138,8 +5120,8 @@ async function bellmanContribute(curve, challengeFilename, responesFileName, ent
     const sG1 = curve.G1.F.n8*2;
     const sG2 = curve.G2.F.n8*2;
 
-    const fdFrom = await fastFile__namespace.readExisting(challengeFilename);
-    const fdTo = await fastFile__namespace.createOverride(responesFileName);
+    const fdFrom = await fastFile.readExisting(challengeFilename);
+    const fdTo = await fastFile.createOverride(responesFileName);
 
 
     await copy(sG1); // alpha1
@@ -5187,7 +5169,7 @@ async function bellmanContribute(curve, challengeFilename, responesFileName, ent
     //////////
     /// Read contributions
     //////////
-    const transcriptHasher = Blake2b__default["default"](64);
+    const transcriptHasher = Blake2b__default['default'](64);
 
     const mpcParams = {};
     // csHash
@@ -5238,7 +5220,7 @@ async function bellmanContribute(curve, challengeFilename, responesFileName, ent
         await fdTo.write(c.transcript);
     }
 
-    const contributionHasher = Blake2b__default["default"](64);
+    const contributionHasher = Blake2b__default['default'](64);
     hashPubKey(contributionHasher, curve, curContribution);
 
     const contributionHash = contributionHasher.digest();
@@ -5302,12 +5284,12 @@ async function bellmanContribute(curve, challengeFilename, responesFileName, ent
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const {stringifyBigInts: stringifyBigInts$3} = ffjavascript.utils;
+const {stringifyBigInts: stringifyBigInts$1} = ffjavascript.utils;
 
 async function zkeyExportVerificationKey(zkeyName, /* logger */ ) {
 
-    const {fd, sections} = await binFileUtils__namespace.readBinFile(zkeyName, "zkey", 2);
-    const zkey = await readHeader$1(fd, sections);
+    const {fd, sections} = await binFileUtils.readBinFile(zkeyName, "zkey", 2);
+    const zkey = await readHeader(fd, sections);
 
     let res;
     if (zkey.protocol == "groth16") {
@@ -5346,16 +5328,16 @@ async function groth16Vk(zkey, fd, sections) {
 
     // Read IC Section
     ///////////
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 3);
+    await binFileUtils.startReadUniqueSection(fd, sections, 3);
     vKey.IC = [];
     for (let i=0; i<= zkey.nPublic; i++) {
         const buff = await fd.read(sG1);
         const P = curve.G1.toObject(buff);
         vKey.IC.push(P);
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
-    vKey = stringifyBigInts$3(vKey);
+    vKey = stringifyBigInts$1(vKey);
 
     return vKey;
 }
@@ -5387,7 +5369,7 @@ async function plonkVk(zkey) {
         w: curve.Fr.toObject(curve.Fr.w[zkey.power])
     };
 
-    vKey = stringifyBigInts$3(vKey);
+    vKey = stringifyBigInts$1(vKey);
 
     return vKey;
 }
@@ -5403,7 +5385,7 @@ async function exportSolidityVerifier(zKeyName, templates, logger) {
 
     let template = templates[verificationKey.protocol];
 
-    return ejs__default["default"].render(template ,  verificationKey);
+    return ejs__default['default'].render(template ,  verificationKey);
 }
 
 /*
@@ -5428,48 +5410,48 @@ async function exportSolidityVerifier(zKeyName, templates, logger) {
 
 async function write(fd, witness, prime) {
 
-    await binFileUtils__namespace.startWriteSection(fd, 1);
+    await binFileUtils.startWriteSection(fd, 1);
     const n8 = (Math.floor( (ffjavascript.Scalar.bitLength(prime) - 1) / 64) +1)*8;
     await fd.writeULE32(n8);
-    await binFileUtils__namespace.writeBigInt(fd, prime, n8);
+    await binFileUtils.writeBigInt(fd, prime, n8);
     await fd.writeULE32(witness.length);
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
-    await binFileUtils__namespace.startWriteSection(fd, 2);
+    await binFileUtils.startWriteSection(fd, 2);
     for (let i=0; i<witness.length; i++) {
-        await binFileUtils__namespace.writeBigInt(fd, witness[i], n8);
+        await binFileUtils.writeBigInt(fd, witness[i], n8);
     }
-    await binFileUtils__namespace.endWriteSection(fd, 2);
+    await binFileUtils.endWriteSection(fd, 2);
 
 
 }
 
 async function writeBin(fd, witnessBin, prime) {
 
-    await binFileUtils__namespace.startWriteSection(fd, 1);
+    await binFileUtils.startWriteSection(fd, 1);
     const n8 = (Math.floor( (ffjavascript.Scalar.bitLength(prime) - 1) / 64) +1)*8;
     await fd.writeULE32(n8);
-    await binFileUtils__namespace.writeBigInt(fd, prime, n8);
+    await binFileUtils.writeBigInt(fd, prime, n8);
     if (witnessBin.byteLength % n8 != 0) {
         throw new Error("Invalid witness length");
     }
     await fd.writeULE32(witnessBin.byteLength / n8);
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
 
-    await binFileUtils__namespace.startWriteSection(fd, 2);
+    await binFileUtils.startWriteSection(fd, 2);
     await fd.write(witnessBin);
-    await binFileUtils__namespace.endWriteSection(fd);
+    await binFileUtils.endWriteSection(fd);
 
 }
 
-async function readHeader(fd, sections) {
+async function readHeader$1(fd, sections) {
 
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 1);
+    await binFileUtils.startReadUniqueSection(fd, sections, 1);
     const n8 = await fd.readULE32();
-    const q = await binFileUtils__namespace.readBigInt(fd, n8);
+    const q = await binFileUtils.readBigInt(fd, n8);
     const nWitness = await fd.readULE32();
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     return {n8, q, nWitness};
 
@@ -5477,17 +5459,17 @@ async function readHeader(fd, sections) {
 
 async function read(fileName) {
 
-    const {fd, sections} = await binFileUtils__namespace.readBinFile(fileName, "wtns", 2);
+    const {fd, sections} = await binFileUtils.readBinFile(fileName, "wtns", 2);
 
-    const {n8, nWitness} = await readHeader(fd, sections);
+    const {n8, nWitness} = await readHeader$1(fd, sections);
 
-    await binFileUtils__namespace.startReadUniqueSection(fd, sections, 2);
+    await binFileUtils.startReadUniqueSection(fd, sections, 2);
     const res = [];
     for (let i=0; i<nWitness; i++) {
-        const v = await binFileUtils__namespace.readBigInt(fd, n8);
+        const v = await binFileUtils.readBigInt(fd, n8);
         res.push(v);
     }
-    await binFileUtils__namespace.endReadSection(fd);
+    await binFileUtils.endReadSection(fd);
 
     await fd.close();
 
@@ -5514,14 +5496,14 @@ async function read(fileName) {
 */
 const {stringifyBigInts: stringifyBigInts$2} = ffjavascript.utils;
 
-async function groth16Prove$1(zkeyFileName, witnessFileName, logger) {
-    const {fd: fdWtns, sections: sectionsWtns} = await binFileUtils__namespace.readBinFile(witnessFileName, "wtns", 2, 1<<25, 1<<23);
+async function groth16Prove(zkeyFileName, witnessFileName, logger) {
+    const {fd: fdWtns, sections: sectionsWtns} = await binFileUtils.readBinFile(witnessFileName, "wtns", 2, 1<<25, 1<<23);
 
-    const wtns = await readHeader(fdWtns, sectionsWtns);
+    const wtns = await readHeader$1(fdWtns, sectionsWtns);
 
-    const {fd: fdZKey, sections: sectionsZKey} = await binFileUtils__namespace.readBinFile(zkeyFileName, "zkey", 2, 1<<25, 1<<23);
+    const {fd: fdZKey, sections: sectionsZKey} = await binFileUtils.readBinFile(zkeyFileName, "zkey", 2, 1<<25, 1<<23);
 
-    const zkey = await readHeader$1(fdZKey, sectionsZKey);
+    const zkey = await readHeader(fdZKey, sectionsZKey);
 
     if (zkey.protocol != "groth16") {
         throw new Error("zkey file is not groth16");
@@ -5543,9 +5525,9 @@ async function groth16Prove$1(zkeyFileName, witnessFileName, logger) {
     const power = log2(zkey.domainSize);
 
     if (logger) logger.debug("Reading Wtns");
-    const buffWitness = await binFileUtils__namespace.readSection(fdWtns, sectionsWtns, 2);
+    const buffWitness = await binFileUtils.readSection(fdWtns, sectionsWtns, 2);
     if (logger) logger.debug("Reading Coeffs");
-    const buffCoeffs = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 4);
+    const buffCoeffs = await binFileUtils.readSection(fdZKey, sectionsZKey, 4);
 
     if (logger) logger.debug("Building ABC");
     const [buffA_T, buffB_T, buffC_T] = await buildABC1(curve, zkey, buffWitness, buffCoeffs, logger);
@@ -5570,23 +5552,23 @@ async function groth16Prove$1(zkeyFileName, witnessFileName, logger) {
     let proof = {};
 
     if (logger) logger.debug("Reading A Points");
-    const buffBasesA = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 5);
+    const buffBasesA = await binFileUtils.readSection(fdZKey, sectionsZKey, 5);
     proof.pi_a = await curve.G1.multiExpAffine(buffBasesA, buffWitness, logger, "multiexp A");
 
     if (logger) logger.debug("Reading B1 Points");
-    const buffBasesB1 = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 6);
+    const buffBasesB1 = await binFileUtils.readSection(fdZKey, sectionsZKey, 6);
     let pib1 = await curve.G1.multiExpAffine(buffBasesB1, buffWitness, logger, "multiexp B1");
 
     if (logger) logger.debug("Reading B2 Points");
-    const buffBasesB2 = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 7);
+    const buffBasesB2 = await binFileUtils.readSection(fdZKey, sectionsZKey, 7);
     proof.pi_b = await curve.G2.multiExpAffine(buffBasesB2, buffWitness, logger, "multiexp B2");
 
     if (logger) logger.debug("Reading C Points");
-    const buffBasesC = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 8);
+    const buffBasesC = await binFileUtils.readSection(fdZKey, sectionsZKey, 8);
     proof.pi_c = await curve.G1.multiExpAffine(buffBasesC, buffWitness.slice((zkey.nPublic+1)*curve.Fr.n8), logger, "multiexp C");
 
     if (logger) logger.debug("Reading H Points");
-    const buffBasesH = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 9);
+    const buffBasesH = await binFileUtils.readSection(fdZKey, sectionsZKey, 9);
     const resH = await curve.G1.multiExpAffine(buffBasesH, buffPodd_T, logger, "multiexp H");
 
     const r = curve.Fr.random();
@@ -5881,9 +5863,9 @@ async function joinABC(curve, zkey, a, b, c, logger) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function wtnsCalculate$1(input, wasmFileName, wtnsFileName, options) {
+async function wtnsCalculate(input, wasmFileName, wtnsFileName, options) {
 
-    const fdWasm = await fastFile__namespace.readExisting(wasmFileName);
+    const fdWasm = await fastFile.readExisting(wasmFileName);
     const wasm = await fdWasm.read(fdWasm.totalSize);
     await fdWasm.close();
 
@@ -5891,12 +5873,12 @@ async function wtnsCalculate$1(input, wasmFileName, wtnsFileName, options) {
     if (wc.circom_version() == 1) {
         const w = await wc.calculateBinWitness(input);
 
-        const fdWtns = await binFileUtils__namespace.createBinFile(wtnsFileName, "wtns", 2, 2);
+        const fdWtns = await binFileUtils.createBinFile(wtnsFileName, "wtns", 2, 2);
 
         await writeBin(fdWtns, w, wc.prime);
         await fdWtns.close();
     } else {
-        const fdWtns = await fastFile__namespace.createOverride(wtnsFileName);
+        const fdWtns = await fastFile.createOverride(wtnsFileName);
 
         const w = await wc.calculateWTNSBin(input);
 
@@ -5924,12 +5906,12 @@ async function wtnsCalculate$1(input, wasmFileName, wtnsFileName, options) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function groth16FullProve$1(input, wasmFile, zkeyFileName, logger) {
+async function groth16FullProve(input, wasmFile, zkeyFileName, logger) {
     const wtns= {
         type: "mem"
     };
-    await wtnsCalculate$1(input, wasmFile, wtns);
-    return await groth16Prove$1(zkeyFileName, wtns, logger);
+    await wtnsCalculate(input, wasmFile, wtns);
+    return await groth16Prove(zkeyFileName, wtns, logger);
 }
 
 /*
@@ -5950,9 +5932,9 @@ async function groth16FullProve$1(input, wasmFile, zkeyFileName, logger) {
     You should have received a copy of the GNU General Public License along with
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
-const {unstringifyBigInts: unstringifyBigInts$2} = ffjavascript.utils;
+const {unstringifyBigInts} = ffjavascript.utils;
 
-async function groth16Verify$1(vk_verifier, publicSignals, proof, logger) {
+async function groth16Verify(vk_verifier, publicSignals, proof, logger) {
 /*
     let cpub = vk_verifier.IC[0];
     for (let s= 0; s< vk_verifier.nPublic; s++) {
@@ -5960,9 +5942,9 @@ async function groth16Verify$1(vk_verifier, publicSignals, proof, logger) {
     }
 */
 
-    vk_verifier = unstringifyBigInts$2(vk_verifier);
-    proof = unstringifyBigInts$2(proof);
-    publicSignals = unstringifyBigInts$2(publicSignals);
+    vk_verifier = unstringifyBigInts(vk_verifier);
+    proof = unstringifyBigInts(proof);
+    publicSignals = unstringifyBigInts(publicSignals);
 
     const curve = await getCurveFromName(vk_verifier.curve);
 
@@ -6024,7 +6006,7 @@ async function groth16Verify$1(vk_verifier, publicSignals, proof, logger) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-function p256$1(n) {
+function p256(n) {
     let nstr = n.toString(16);
     while (nstr.length < 64) nstr = "0"+nstr;
     nstr = `"0x${nstr}"`;
@@ -6036,13 +6018,13 @@ async function groth16ExportSolidityCallData(proof, pub) {
     let inputs = "";
     for (let i=0; i<pub.length; i++) {
         if (inputs != "") inputs = inputs + ",";
-        inputs = inputs + p256$1(pub[i]);
+        inputs = inputs + p256(pub[i]);
     }
 
     let S;
-    S=`[${p256$1(proof.pi_a[0])}, ${p256$1(proof.pi_a[1])}],` +
-        `[[${p256$1(proof.pi_b[0][1])}, ${p256$1(proof.pi_b[0][0])}],[${p256$1(proof.pi_b[1][1])}, ${p256$1(proof.pi_b[1][0])}]],` +
-        `[${p256$1(proof.pi_c[0])}, ${p256$1(proof.pi_c[1])}],` +
+    S=`[${p256(proof.pi_a[0])}, ${p256(proof.pi_a[1])}],` +
+        `[[${p256(proof.pi_b[0][1])}, ${p256(proof.pi_b[0][0])}],[${p256(proof.pi_b[1][1])}, ${p256(proof.pi_b[1][0])}]],` +
+        `[${p256(proof.pi_c[0])}, ${p256(proof.pi_c[1])}],` +
         `[${inputs}]`;
 
     return S;
@@ -6068,11 +6050,11 @@ async function groth16ExportSolidityCallData(proof, pub) {
 */
 
 
-async function plonkSetup$1(r1csName, ptauName, zkeyName, logger) {
+async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
 
     if (globalThis.gc) {globalThis.gc();}
 
-    await Blake2b__default["default"].ready();
+    await Blake2b__default['default'].ready();
 
     const {fd: fdPTau, sections: sectionsPTau} = await binFileUtils.readBinFile(ptauName, "ptau", 1, 1<<22, 1<<24);
     const {curve, power} = await readPTauHeader(fdPTau, sectionsPTau);
@@ -6496,17 +6478,17 @@ async function plonkSetup$1(r1csName, ptauName, zkeyName, logger) {
     You should have received a copy of the GNU General Public License along with
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
-const {stringifyBigInts: stringifyBigInts$1} = ffjavascript.utils;
-const { keccak256: keccak256$1 } = jsSha3__default["default"];
+const {stringifyBigInts: stringifyBigInts$3} = ffjavascript.utils;
+const { keccak256 } = jsSha3__default['default'];
 
 async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
-    const {fd: fdWtns, sections: sectionsWtns} = await binFileUtils__namespace.readBinFile(witnessFileName, "wtns", 2, 1<<25, 1<<23);
+    const {fd: fdWtns, sections: sectionsWtns} = await binFileUtils.readBinFile(witnessFileName, "wtns", 2, 1<<25, 1<<23);
 
-    const wtns = await readHeader(fdWtns, sectionsWtns);
+    const wtns = await readHeader$1(fdWtns, sectionsWtns);
 
-    const {fd: fdZKey, sections: sectionsZKey} = await binFileUtils__namespace.readBinFile(zkeyFileName, "zkey", 2, 1<<25, 1<<23);
+    const {fd: fdZKey, sections: sectionsZKey} = await binFileUtils.readBinFile(zkeyFileName, "zkey", 2, 1<<25, 1<<23);
 
-    const zkey = await readHeader$1(fdZKey, sectionsZKey);
+    const zkey = await readHeader(fdZKey, sectionsZKey);
     if (zkey.protocol != "plonk") {
         throw new Error("zkey file is not plonk");
     }
@@ -6525,7 +6507,7 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     const n8r = curve.Fr.n8;
 
     if (logger) logger.debug("Reading Wtns");
-    const buffWitness = await binFileUtils__namespace.readSection(fdWtns, sectionsWtns, 2);
+    const buffWitness = await binFileUtils.readSection(fdWtns, sectionsWtns, 2);
     // First element in plonk is not used and can be any value. (But always the same).
     // We set it to zero to go faster in the exponentiations.
     buffWitness.set(Fr.zero, 0);
@@ -6552,7 +6534,7 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     const pol_s2 = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
     await fdZKey.readToBuffer(pol_s2, 0 , zkey.domainSize*n8r, sectionsZKey[12][0].p + 5*zkey.domainSize*n8r);
 
-    const PTau = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 14);
+    const PTau = await binFileUtils.readSection(fdZKey, sectionsZKey, 14);
 
 
     const ch = {};
@@ -6604,13 +6586,13 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
 
     delete proof.eval_t;
 
-    proof = stringifyBigInts$1(proof);
-    publicSignals = stringifyBigInts$1(publicSignals);
+    proof = stringifyBigInts$3(proof);
+    publicSignals = stringifyBigInts$3(publicSignals);
 
     return {proof, publicSignals};
 
     async function calculateAdditions() {
-        const additionsBuff = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 3);
+        const additionsBuff = await binFileUtils.readSection(fdZKey, sectionsZKey, 3);
 
         const sSum = 8+curve.Fr.n8*2;
 
@@ -6636,9 +6618,9 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
         let B = new ffjavascript.BigBuffer(zkey.domainSize * n8r);
         let C = new ffjavascript.BigBuffer(zkey.domainSize * n8r);
 
-        const aMap = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 4);
-        const bMap = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 5);
-        const cMap = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 6);
+        const aMap = await binFileUtils.readSection(fdZKey, sectionsZKey, 4);
+        const bMap = await binFileUtils.readSection(fdZKey, sectionsZKey, 5);
+        const cMap = await binFileUtils.readSection(fdZKey, sectionsZKey, 6);
 
         for (let i=0; i<zkey.nConstrains; i++) {
             const iA = readUInt32(aMap, i*4);
@@ -6821,7 +6803,7 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
         const QC4 = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
         await fdZKey.readToBuffer(QC4, 0 , zkey.domainSize*n8r*4, sectionsZKey[11][0].p + zkey.domainSize*n8r);
 
-        const lPols = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 13);
+        const lPols = await binFileUtils.readSection(fdZKey, sectionsZKey, 13);
 
         const transcript3 = new Uint8Array(G1.F.n8*2);
         G1.toRprUncompressed(transcript3, 0, proof.Z);
@@ -7239,7 +7221,7 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     }
 
     function hashToFr(transcript) {
-        const v = ffjavascript.Scalar.fromRprBE(new Uint8Array(keccak256$1.arrayBuffer(transcript)));
+        const v = ffjavascript.Scalar.fromRprBE(new Uint8Array(keccak256.arrayBuffer(transcript)));
         return Fr.e(v);
     }
 
@@ -7343,11 +7325,11 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function plonkFullProve$1(input, wasmFile, zkeyFileName, logger) {
+async function plonkFullProve(input, wasmFile, zkeyFileName, logger) {
     const wtns= {
         type: "mem"
     };
-    await wtnsCalculate$1(input, wasmFile, wtns);
+    await wtnsCalculate(input, wasmFile, wtns);
     return await plonk16Prove(zkeyFileName, wtns, logger);
 }
 
@@ -7370,10 +7352,10 @@ async function plonkFullProve$1(input, wasmFile, zkeyFileName, logger) {
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
 const {unstringifyBigInts: unstringifyBigInts$1} = ffjavascript.utils;
-const { keccak256 } = jsSha3__default["default"];
+const { keccak256: keccak256$1 } = jsSha3__default['default'];
 
 
-async function plonkVerify$1(vk_verifier, publicSignals, proof, logger) {
+async function plonkVerify(vk_verifier, publicSignals, proof, logger) {
     vk_verifier = unstringifyBigInts$1(vk_verifier);
     proof = unstringifyBigInts$1(proof);
     publicSignals = unstringifyBigInts$1(publicSignals);
@@ -7589,7 +7571,7 @@ function calculateLagrangeEvaluations(curve, challanges, vk) {
 }
 
 function hashToFr(curve, transcript) {
-    const v = ffjavascript.Scalar.fromRprBE(new Uint8Array(keccak256.arrayBuffer(transcript)));
+    const v = ffjavascript.Scalar.fromRprBE(new Uint8Array(keccak256$1.arrayBuffer(transcript)));
     return curve.Fr.e(v);
 }
 
@@ -7775,7 +7757,7 @@ function i2hex(i) {
     return ("0" + i.toString(16)).slice(-2);
 }
 
-function p256(n) {
+function p256$1(n) {
     let nstr = n.toString(16);
     while (nstr.length < 64) nstr = "0"+nstr;
     nstr = `"0x${nstr}"`;
@@ -7791,7 +7773,7 @@ async function plonkExportSolidityCallData(proof, pub) {
     let inputs = "";
     for (let i=0; i<pub.length; i++) {
         if (inputs != "") inputs = inputs + ",";
-        inputs = inputs + p256(pub[i]);
+        inputs = inputs + p256$1(pub[i]);
     }
 
     const proofBuff = new Uint8Array(G1.F.n8*2*9 + Fr.n8*7);
@@ -7838,9 +7820,9 @@ async function plonkExportSolidityCallData(proof, pub) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function wtnsDebug$1(input, wasmFileName, wtnsFileName, symName, options, logger) {
+async function wtnsDebug(input, wasmFileName, wtnsFileName, symName, options, logger) {
 
-    const fdWasm = await fastFile__namespace.readExisting(wasmFileName);
+    const fdWasm = await fastFile.readExisting(wasmFileName);
     const wasm = await fdWasm.read(fdWasm.totalSize);
     await fdWasm.close();
 
@@ -7877,7 +7859,7 @@ async function wtnsDebug$1(input, wasmFileName, wtnsFileName, symName, options, 
     const wc = await circom_runtime.WitnessCalculatorBuilder(wasm, wcOps);
     const w = await wc.calculateWitness(input);
 
-    const fdWtns = await binFileUtils__namespace.createBinFile(wtnsFileName, "wtns", 2, 2);
+    const fdWtns = await binFileUtils.createBinFile(wtnsFileName, "wtns", 2, 2);
 
     await write(fdWtns, w, wc.prime);
 
@@ -7903,7 +7885,7 @@ async function wtnsDebug$1(input, wasmFileName, wtnsFileName, symName, options, 
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-async function wtnsExportJson$1(wtnsFileName) {
+async function wtnsExportJson(wtnsFileName) {
 
     const w = await read(wtnsFileName);
 
@@ -7928,11 +7910,11 @@ async function wtnsExportJson$1(wtnsFileName) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const {stringifyBigInts, unstringifyBigInts} = ffjavascript.utils;
-const logger = Logger__default["default"].create("snarkJS", {showTimestamp:false});
-Logger__default["default"].setLogLevel("INFO");
+const {stringifyBigInts: stringifyBigInts$4, unstringifyBigInts: unstringifyBigInts$2} = ffjavascript.utils;
+const logger = Logger__default['default'].create("snarkJS", {showTimestamp:false});
+Logger__default['default'].setLogLevel("INFO");
 
-const __dirname$1 = path__default["default"].dirname(url__default["default"].fileURLToPath((typeof document === 'undefined' ? new (require('u' + 'rl').URL)('file:' + __filename).href : (document.currentScript && document.currentScript.src || new URL('cli.cjs', document.baseURI).href))));
+const __dirname$2 = path__default['default'].dirname(url__default['default'].fileURLToPath((typeof document === 'undefined' ? new (require('u' + 'rl').URL)('file:' + __filename).href : (document.currentScript && document.currentScript.src || new URL('cli.cjs', document.baseURI).href))));
 
 const commands = [
     {
@@ -8019,13 +8001,13 @@ const commands = [
         cmd: "r1cs info [circuit.r1cs]",
         description: "Print statistiscs of a circuit",
         alias: ["ri", "info -r|r1cs:circuit.r1cs"],
-        action: r1csInfo
+        action: r1csInfo$1
     },
     {
         cmd: "r1cs print [circuit.r1cs] [circuit.sym]",
         description: "Print the constraints of a circuit",
         alias: ["rp", "print -r|r1cs:circuit.r1cs -s|sym"],
-        action: r1csPrint
+        action: r1csPrint$1
     },
     {
         cmd: "r1cs export json [circuit.r1cs] [circuit.json]",
@@ -8037,7 +8019,7 @@ const commands = [
         cmd: "wtns calculate [circuit.wasm] [input.json] [witness.wtns]",
         description: "Caclculate specific witness of a circuit given an input",
         alias: ["wc", "calculatewitness -ws|wasm:circuit.wasm -i|input:input.json -wt|witness:witness.wtns"],
-        action: wtnsCalculate
+        action: wtnsCalculate$1
     },
     {
         cmd: "wtns debug [circuit.wasm] [input.json] [witness.wtns] [circuit.sym]",
@@ -8045,7 +8027,7 @@ const commands = [
         longDescription: "Calculate the witness with debug info. \nOptions:\n-g or --g : Log signal gets\n-s or --s : Log signal sets\n-t or --trigger : Log triggers ",
         options: "-get|g -set|s -trigger|t",
         alias: ["wd"],
-        action: wtnsDebug
+        action: wtnsDebug$1
     },
     {
         cmd: "wtns export json [witness.wtns] [witnes.json]",
@@ -8053,7 +8035,7 @@ const commands = [
         longDescription: "Calculate the witness with debug info. \nOptions:\n-g or --g : Log signal gets\n-s or --s : Log signal sets\n-t or --trigger : Log triggers ",
         options: "-verbose|v",
         alias: ["wej"],
-        action: wtnsExportJson
+        action: wtnsExportJson$1
     },
     {
         cmd: "zkey contribute <circuit_old.zkey> <circuit_new.zkey>",
@@ -8115,7 +8097,7 @@ const commands = [
         description: "Exports a circuit key to a JSON file",
         alias: ["zkej"],
         options: "-verbose|v",
-        action: zkeyExportJson
+        action: zkeyExportJson$1
     },
     {
         cmd: "zkey export solidityverifier [circuit_final.zkey] [verifier.sol]",
@@ -8141,27 +8123,27 @@ const commands = [
         description: "Generates a zk Proof from witness",
         alias: ["g16p", "zpw", "zksnark proof", "proof -pk|provingkey -wt|witness -p|proof -pub|public"],
         options: "-verbose|v -protocol",
-        action: groth16Prove
+        action: groth16Prove$1
     },
     {
         cmd: "groth16 fullprove [input.json] [circuit_final.wasm] [circuit_final.zkey] [proof.json] [public.json]",
         description: "Generates a zk Proof from input",
         alias: ["g16f", "g16i"],
         options: "-verbose|v -protocol",
-        action: groth16FullProve
+        action: groth16FullProve$1
     },
     {
         cmd: "groth16 verify [verification_key.json] [public.json] [proof.json]",
         description: "Verify a zk Proof",
         alias: ["g16v", "verify -vk|verificationkey -pub|public -p|proof"],
-        action: groth16Verify
+        action: groth16Verify$1
     },
     {
         cmd: "plonk setup [circuit.r1cs] [powersoftau.ptau] [circuit.zkey]",
         description: "Creates an initial PLONK pkey ",
         alias: ["pks"],
         options: "-verbose|v",
-        action: plonkSetup
+        action: plonkSetup$1
     },
     {
         cmd: "plonk prove [circuit.zkey] [witness.wtns] [proof.json] [public.json]",
@@ -8175,14 +8157,14 @@ const commands = [
         description: "Generates a PLONK Proof from input",
         alias: ["pkf"],
         options: "-verbose|v -protocol",
-        action: plonkFullProve
+        action: plonkFullProve$1
     },
     {
         cmd: "plonk verify [verification_key.json] [public.json] [proof.json]",
         description: "Verify a PLONK Proof",
         alias: ["pkv"],
         options: "-verbose|v",
-        action: plonkVerify
+        action: plonkVerify$1
     }
 ];
 
@@ -8230,29 +8212,29 @@ function changeExt(fileName, newExt) {
 }
 
 // r1cs export circomJSON [circuit.r1cs] [circuit.json]
-async function r1csInfo(params, options) {
+async function r1csInfo$1(params, options) {
     const r1csName = params[0] ||  "circuit.r1cs";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    await r1csInfo$1(r1csName, logger);
+    await r1csInfo(r1csName, logger);
 
 
     return 0;
 }
 
 // r1cs print [circuit.r1cs] [circuit.sym]
-async function r1csPrint(params, options) {
+async function r1csPrint$1(params, options) {
     const r1csName = params[0] || "circuit.r1cs";
     const symName = params[1] || changeExt(r1csName, "sym");
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const cir = await r1csfile.readR1cs(r1csName, true, true, false);
 
     const sym = await loadSymbols(symName);
 
-    await r1csPrint$1(cir, sym, logger);
+    await r1csPrint(cir, sym, logger);
 
     return 0;
 }
@@ -8263,27 +8245,27 @@ async function r1csExportJSON(params, options) {
     const r1csName = params[0] || "circuit.r1cs";
     const jsonName = params[1] || changeExt(r1csName, "json");
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const r1csObj = await r1csExportJson(r1csName, logger);
 
     const S = JSON.stringify(r1csObj, null, 1);
-    await fs__default["default"].promises.writeFile(jsonName, S);
+    await fs__default['default'].promises.writeFile(jsonName, S);
 
     return 0;
 }
 
 // wtns calculate <circuit.wasm> <input.json> <witness.wtns>
-async function wtnsCalculate(params, options) {
+async function wtnsCalculate$1(params, options) {
     const wasmName = params[0] || "circuit.wasm";
     const inputName = params[1] || "input.json";
     const witnessName = params[2] || "witness.wtns";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const input = unstringifyBigInts(JSON.parse(await fs__default["default"].promises.readFile(inputName, "utf8")));
+    const input = unstringifyBigInts$2(JSON.parse(await fs__default['default'].promises.readFile(inputName, "utf8")));
 
-    await wtnsCalculate$1(input, wasmName, witnessName);
+    await wtnsCalculate(input, wasmName, witnessName);
 
     return 0;
 }
@@ -8291,17 +8273,17 @@ async function wtnsCalculate(params, options) {
 
 // wtns debug <circuit.wasm> <input.json> <witness.wtns> <circuit.sym>
 // -get|g -set|s -trigger|t
-async function wtnsDebug(params, options) {
+async function wtnsDebug$1(params, options) {
     const wasmName = params[0] || "circuit.wasm";
     const inputName = params[1] || "input.json";
     const witnessName = params[2] || "witness.wtns";
     const symName = params[3] || changeExt(wasmName, "sym");
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const input = unstringifyBigInts(JSON.parse(await fs__default["default"].promises.readFile(inputName, "utf8")));
+    const input = unstringifyBigInts$2(JSON.parse(await fs__default['default'].promises.readFile(inputName, "utf8")));
 
-    await wtnsDebug$1(input, wasmName, witnessName, symName, options, logger);
+    await wtnsDebug(input, wasmName, witnessName, symName, options, logger);
 
     return 0;
 }
@@ -8309,15 +8291,15 @@ async function wtnsDebug(params, options) {
 
 // wtns export json  [witness.wtns] [witness.json]
 // -get|g -set|s -trigger|t
-async function wtnsExportJson(params, options) {
+async function wtnsExportJson$1(params, options) {
     const wtnsName = params[0] || "witness.wtns";
     const jsonName = params[1] || "witness.json";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const w = await wtnsExportJson$1(wtnsName);
+    const w = await wtnsExportJson(wtnsName);
 
-    await fs__default["default"].promises.writeFile(jsonName, JSON.stringify(stringifyBigInts(w), null, 1));
+    await fs__default['default'].promises.writeFile(jsonName, JSON.stringify(stringifyBigInts$4(w), null, 1));
 
     return 0;
 }
@@ -8348,25 +8330,25 @@ async function zksnarkSetup(params, options) {
 */
 
 // groth16 prove [circuit.zkey] [witness.wtns] [proof.json] [public.json]
-async function groth16Prove(params, options) {
+async function groth16Prove$1(params, options) {
 
     const zkeyName = params[0] || "circuit_final.zkey";
     const witnessName = params[1] || "witness.wtns";
     const proofName = params[2] || "proof.json";
     const publicName = params[3] || "public.json";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const {proof, publicSignals} = await groth16Prove$1(zkeyName, witnessName, logger);
+    const {proof, publicSignals} = await groth16Prove(zkeyName, witnessName, logger);
 
-    await fs__default["default"].promises.writeFile(proofName, JSON.stringify(stringifyBigInts(proof), null, 1), "utf-8");
-    await fs__default["default"].promises.writeFile(publicName, JSON.stringify(stringifyBigInts(publicSignals), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(proofName, JSON.stringify(stringifyBigInts$4(proof), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(publicName, JSON.stringify(stringifyBigInts$4(publicSignals), null, 1), "utf-8");
 
     return 0;
 }
 
 // groth16 fullprove [input.json] [circuit.wasm] [circuit.zkey] [proof.json] [public.json]
-async function groth16FullProve(params, options) {
+async function groth16FullProve$1(params, options) {
 
     const inputName = params[0] || "input.json";
     const wasmName = params[1] || "circuit.wasm";
@@ -8374,32 +8356,32 @@ async function groth16FullProve(params, options) {
     const proofName = params[3] || "proof.json";
     const publicName = params[4] || "public.json";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const input = unstringifyBigInts(JSON.parse(await fs__default["default"].promises.readFile(inputName, "utf8")));
+    const input = unstringifyBigInts$2(JSON.parse(await fs__default['default'].promises.readFile(inputName, "utf8")));
 
-    const {proof, publicSignals} = await groth16FullProve$1(input, wasmName, zkeyName,  logger);
+    const {proof, publicSignals} = await groth16FullProve(input, wasmName, zkeyName,  logger);
 
-    await fs__default["default"].promises.writeFile(proofName, JSON.stringify(stringifyBigInts(proof), null, 1), "utf-8");
-    await fs__default["default"].promises.writeFile(publicName, JSON.stringify(stringifyBigInts(publicSignals), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(proofName, JSON.stringify(stringifyBigInts$4(proof), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(publicName, JSON.stringify(stringifyBigInts$4(publicSignals), null, 1), "utf-8");
 
     return 0;
 }
 
 // groth16 verify [verification_key.json] [public.json] [proof.json]
-async function groth16Verify(params, options) {
+async function groth16Verify$1(params, options) {
 
     const verificationKeyName = params[0] || "verification_key.json";
     const publicName = params[1] || "public.json";
     const proofName = params[2] || "proof.json";
 
-    const verificationKey = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(verificationKeyName, "utf8")));
-    const pub = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(publicName, "utf8")));
-    const proof = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(proofName, "utf8")));
+    const verificationKey = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(verificationKeyName, "utf8")));
+    const pub = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(publicName, "utf8")));
+    const proof = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(proofName, "utf8")));
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const isValid = await groth16Verify$1(verificationKey, pub, proof, logger);
+    const isValid = await groth16Verify(verificationKey, pub, proof, logger);
 
     if (isValid) {
         return 0;
@@ -8413,29 +8395,29 @@ async function zkeyExportVKey(params, options) {
     const zkeyName = params[0] || "circuit_final.zkey";
     const verificationKeyName = params[1] || "verification_key.json";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const vKey = await zkeyExportVerificationKey(zkeyName);
 
     const S = JSON.stringify(ffjavascript.utils.stringifyBigInts(vKey), null, 1);
-    await fs__default["default"].promises.writeFile(verificationKeyName, S);
+    await fs__default['default'].promises.writeFile(verificationKeyName, S);
 }
 
 // zkey export json [circuit_final.zkey] [circuit.zkey.json]",
-async function zkeyExportJson(params, options) {
+async function zkeyExportJson$1(params, options) {
     const zkeyName = params[0] || "circuit_final.zkey";
     const zkeyJsonName = params[1] || "circuit_final.zkey.json";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const zKey = await zkeyExportJson$1(zkeyName);
+    const zKey = await zkeyExportJson(zkeyName);
 
     const S = JSON.stringify(ffjavascript.utils.stringifyBigInts(zKey), null, 1);
-    await fs__default["default"].promises.writeFile(zkeyJsonName, S);
+    await fs__default['default'].promises.writeFile(zkeyJsonName, S);
 }
 
 async function fileExists(file) {
-    return fs__default["default"].promises.access(file, fs__default["default"].constants.F_OK)
+    return fs__default['default'].promises.access(file, fs__default['default'].constants.F_OK)
         .then(() => true)
         .catch(() => false);
 }
@@ -8456,21 +8438,21 @@ async function zkeyExportSolidityVerifier(params, options) {
         verifierName = params[1];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const templates = {};
 
-    if (await fileExists(path__default["default"].join(__dirname$1, "templates"))) {
-        templates.groth16 = await fs__default["default"].promises.readFile(path__default["default"].join(__dirname$1, "templates", "verifier_groth16.sol.ejs"), "utf8");
-        templates.plonk = await fs__default["default"].promises.readFile(path__default["default"].join(__dirname$1, "templates", "verifier_plonk.sol.ejs"), "utf8");    
+    if (await fileExists(path__default['default'].join(__dirname$2, "templates"))) {
+        templates.groth16 = await fs__default['default'].promises.readFile(path__default['default'].join(__dirname$2, "templates", "verifier_groth16.sol.ejs"), "utf8");
+        templates.plonk = await fs__default['default'].promises.readFile(path__default['default'].join(__dirname$2, "templates", "verifier_plonk.sol.ejs"), "utf8");    
     } else {
-        templates.groth16 = await fs__default["default"].promises.readFile(path__default["default"].join(__dirname$1, "..", "templates", "verifier_groth16.sol.ejs"), "utf8");
-        templates.plonk = await fs__default["default"].promises.readFile(path__default["default"].join(__dirname$1, "..", "templates", "verifier_plonk.sol.ejs"), "utf8");    
+        templates.groth16 = await fs__default['default'].promises.readFile(path__default['default'].join(__dirname$2, "..", "templates", "verifier_groth16.sol.ejs"), "utf8");
+        templates.plonk = await fs__default['default'].promises.readFile(path__default['default'].join(__dirname$2, "..", "templates", "verifier_plonk.sol.ejs"), "utf8");    
     }
     
     const verifierCode = await exportSolidityVerifier(zkeyName, templates);
 
-    fs__default["default"].writeFileSync(verifierName, verifierCode, "utf-8");
+    fs__default['default'].writeFileSync(verifierName, verifierCode, "utf-8");
 
     return 0;
 }
@@ -8493,10 +8475,10 @@ async function zkeyExportSolidityCalldata(params, options) {
         proofName = params[1];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const pub = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(publicName, "utf8")));
-    const proof = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(proofName, "utf8")));
+    const pub = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(publicName, "utf8")));
+    const proof = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(proofName, "utf8")));
 
     let res;
     if (proof.protocol == "groth16") {
@@ -8532,7 +8514,7 @@ async function powersOfTauNew(params, options) {
 
     const curve = await getCurveFromName(curveName);
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return await newAccumulator(curve, power, ptauName, logger);
 }
@@ -8549,7 +8531,7 @@ async function powersOfTauExportChallenge(params, options) {
         challengeName = params[1];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return await exportChallenge(ptauName, challengeName, logger);
 }
@@ -8569,7 +8551,7 @@ async function powersOfTauChallengeContribute(params, options) {
         responseName = params[2];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return await challengeContribute(curve, challengeName, responseName, options.entropy, logger);
 }
@@ -8589,7 +8571,7 @@ async function powersOfTauImport(params, options) {
     if (options.nopoints) importPoints = false;
     if (options.nocheck) doCheck = false;
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const res = await importResponse(oldPtauName, response, newPtauName, options.name, importPoints, logger);
 
@@ -8604,7 +8586,7 @@ async function powersOfTauVerify(params, options) {
 
     ptauName = params[0];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const res = await verify(ptauName, logger);
     if (res === true) {
@@ -8625,9 +8607,9 @@ async function powersOfTauBeacon(params, options) {
     beaconHashStr = params[2];
     numIterationsExp = params[3];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    return await beacon$1(oldPtauName, newPtauName, options.name ,beaconHashStr, numIterationsExp, logger);
+    return await beacon(oldPtauName, newPtauName, options.name ,beaconHashStr, numIterationsExp, logger);
 }
 
 async function powersOfTauContribute(params, options) {
@@ -8637,7 +8619,7 @@ async function powersOfTauContribute(params, options) {
     oldPtauName = params[0];
     newPtauName = params[1];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return await contribute(oldPtauName, newPtauName, options.name , options.entropy, logger);
 }
@@ -8649,7 +8631,7 @@ async function powersOfTauPreparePhase2(params, options) {
     oldPtauName = params[0];
     newPtauName = params[1];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return await preparePhase2(oldPtauName, newPtauName, logger);
 }
@@ -8661,7 +8643,7 @@ async function powersOfTauConvert(params, options) {
     oldPtauName = params[0];
     newPtauName = params[1];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return await convert(oldPtauName, newPtauName, logger);
 }
@@ -8677,7 +8659,7 @@ async function powersOfTauTruncate(params, options) {
     template = template.slice(0, template.length-1);
     template = template+"_";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return await truncate(ptauName, template, logger);
 }
@@ -8690,12 +8672,12 @@ async function powersOfTauExportJson(params, options) {
     ptauName = params[0];
     jsonName = params[1];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const pTau = await exportJson(ptauName, logger);
 
-    const S = JSON.stringify(stringifyBigInts(pTau), null, 1);
-    await fs__default["default"].promises.writeFile(jsonName, S);
+    const S = JSON.stringify(stringifyBigInts$4(pTau), null, 1);
+    await fs__default['default'].promises.writeFile(jsonName, S);
 
 }
 
@@ -8724,7 +8706,7 @@ async function zkeyNew(params, options) {
         zkeyName = params[2];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return newZKey(r1csName, ptauName, zkeyName, logger);
 }
@@ -8742,7 +8724,7 @@ async function zkeyExportBellman(params, options) {
         mpcparamsName = params[1];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return phase2exportMPCParams(zkeyName, mpcparamsName, logger);
 
@@ -8759,7 +8741,7 @@ async function zkeyImportBellman(params, options) {
     mpcParamsName = params[1];
     zkeyNameNew = params[2];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return phase2importMPCParams(zkeyNameOld, mpcParamsName, zkeyNameNew, options.name, logger);
 }
@@ -8788,7 +8770,7 @@ async function zkeyVerifyFromR1cs(params, options) {
         zkeyName = params[2];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const res = await phase2verifyFromR1cs(r1csName, ptauName, zkeyName, logger);
     if (res === true) {
@@ -8823,7 +8805,7 @@ async function zkeyVerifyFromInit(params, options) {
         zkeyName = params[2];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const res = await phase2verifyFromInit(initZKeyName, ptauName, zkeyName, logger);
     if (res === true) {
@@ -8841,7 +8823,7 @@ async function zkeyContribute(params, options) {
     zkeyOldName = params[0];
     zkeyNewName = params[1];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return phase2contribute(zkeyOldName, zkeyNewName, options.name, options.entropy, logger);
 }
@@ -8858,9 +8840,9 @@ async function zkeyBeacon(params, options) {
     beaconHashStr = params[2];
     numIterationsExp = params[3];
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    return await beacon(zkeyOldName, zkeyNewName, options.name ,beaconHashStr, numIterationsExp, logger);
+    return await beacon$1(zkeyOldName, zkeyNewName, options.name ,beaconHashStr, numIterationsExp, logger);
 }
 
 
@@ -8879,14 +8861,14 @@ async function zkeyBellmanContribute(params, options) {
         responseName = params[2];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     return bellmanContribute(curve, challengeName, responseName, options.entropy, logger);
 }
 
 
 // plonk setup <circuit.r1cs> <powersoftau.ptau> <circuit.zkey>
-async function plonkSetup(params, options) {
+async function plonkSetup$1(params, options) {
     let r1csName;
     let ptauName;
     let zkeyName;
@@ -8909,9 +8891,9 @@ async function plonkSetup(params, options) {
         zkeyName = params[2];
     }
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    return plonkSetup$1(r1csName, ptauName, zkeyName, logger);
+    return plonkSetup(r1csName, ptauName, zkeyName, logger);
 }
 
 
@@ -8923,19 +8905,19 @@ async function plonkProve(params, options) {
     const proofName = params[2] || "proof.json";
     const publicName = params[3] || "public.json";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
     const {proof, publicSignals} = await plonk16Prove(zkeyName, witnessName, logger);
 
-    await fs__default["default"].promises.writeFile(proofName, JSON.stringify(stringifyBigInts(proof), null, 1), "utf-8");
-    await fs__default["default"].promises.writeFile(publicName, JSON.stringify(stringifyBigInts(publicSignals), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(proofName, JSON.stringify(stringifyBigInts$4(proof), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(publicName, JSON.stringify(stringifyBigInts$4(publicSignals), null, 1), "utf-8");
 
     return 0;
 }
 
 
 // plonk fullprove [input.json] [circuit.wasm] [circuit.zkey] [proof.json] [public.json]
-async function plonkFullProve(params, options) {
+async function plonkFullProve$1(params, options) {
 
     const inputName = params[0] || "input.json";
     const wasmName = params[1] || "circuit.wasm";
@@ -8943,33 +8925,33 @@ async function plonkFullProve(params, options) {
     const proofName = params[3] || "proof.json";
     const publicName = params[4] || "public.json";
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const input = unstringifyBigInts(JSON.parse(await fs__default["default"].promises.readFile(inputName, "utf8")));
+    const input = unstringifyBigInts$2(JSON.parse(await fs__default['default'].promises.readFile(inputName, "utf8")));
 
-    const {proof, publicSignals} = await plonkFullProve$1(input, wasmName, zkeyName,  logger);
+    const {proof, publicSignals} = await plonkFullProve(input, wasmName, zkeyName,  logger);
 
-    await fs__default["default"].promises.writeFile(proofName, JSON.stringify(stringifyBigInts(proof), null, 1), "utf-8");
-    await fs__default["default"].promises.writeFile(publicName, JSON.stringify(stringifyBigInts(publicSignals), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(proofName, JSON.stringify(stringifyBigInts$4(proof), null, 1), "utf-8");
+    await fs__default['default'].promises.writeFile(publicName, JSON.stringify(stringifyBigInts$4(publicSignals), null, 1), "utf-8");
 
     return 0;
 }
 
 
 // plonk verify [verification_key.json] [public.json] [proof.json]
-async function plonkVerify(params, options) {
+async function plonkVerify$1(params, options) {
 
     const verificationKeyName = params[0] || "verification_key.json";
     const publicName = params[1] || "public.json";
     const proofName = params[2] || "proof.json";
 
-    const verificationKey = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(verificationKeyName, "utf8")));
-    const pub = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(publicName, "utf8")));
-    const proof = unstringifyBigInts(JSON.parse(fs__default["default"].readFileSync(proofName, "utf8")));
+    const verificationKey = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(verificationKeyName, "utf8")));
+    const pub = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(publicName, "utf8")));
+    const proof = unstringifyBigInts$2(JSON.parse(fs__default['default'].readFileSync(proofName, "utf8")));
 
-    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    if (options.verbose) Logger__default['default'].setLogLevel("DEBUG");
 
-    const isValid = await plonkVerify$1(verificationKey, pub, proof, logger);
+    const isValid = await plonkVerify(verificationKey, pub, proof, logger);
 
     if (isValid) {
         return 0;
