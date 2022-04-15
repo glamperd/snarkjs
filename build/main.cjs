@@ -3075,6 +3075,7 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
     let firstPoints;
     firstPoints = await processSection(2, "G1",  (2 ** power) * 2 -1, curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG1", progressOptions );
     curContribution.tauG1 = firstPoints[1];
+    if (logger) logger.info(curContribution.tauG1.toString(), "tauG1: ");
     firstPoints = await processSection(3, "G2",  (2 ** power) , curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG2", progressOptions );
     curContribution.tauG2 = firstPoints[1];
     firstPoints = await processSection(4, "G1",  (2 ** power) , curContribution.key.alpha.prvKey, curContribution.key.tau.prvKey, "alphaTauG1", progressOptions );
