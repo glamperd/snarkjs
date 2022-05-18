@@ -631,7 +631,7 @@ function log2( V )
 function formatHash(b, title) {
     const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
     let S = "";
-    for (let i=0; i<4; i++) {
+    for (let i=0; i<b.byteLength/16; i++) {
         if (i>0) S += "\n";
         S += "\t\t";
         for (let j=0; j<4; j++) {
@@ -2474,7 +2474,7 @@ async function contribute(oldPtauFilename, newPTauFilename, name, entropy, logge
     let firstPoints;
     firstPoints = await processSection(2, "G1",  (2 ** power) * 2 -1, curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG1", progressOptions );
     curContribution.tauG1 = firstPoints[1];
-    if (logger) logger.info(formatHash(curContribution.tauG1, "tauG1: "));
+    if (logger) logger.info(formatHash(curContribution.tauG1, "tauG1" ));
     firstPoints = await processSection(3, "G2",  (2 ** power) , curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG2", progressOptions );
     curContribution.tauG2 = firstPoints[1];
     if (logger) logger.info(formatHash(curContribution.tauG2, "tauG2: "));

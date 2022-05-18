@@ -97,7 +97,7 @@ export default async function contribute(oldPtauFilename, newPTauFilename, name,
     let firstPoints;
     firstPoints = await processSection(2, "G1",  (2 ** power) * 2 -1, curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG1", progressOptions );
     curContribution.tauG1 = firstPoints[1];
-    if (logger) logger.info(misc.formatHash(curContribution.tauG1, "tauG1: "));
+    if (logger) logger.info(misc.formatHash(curContribution.tauG1, "tauG1" ));
     firstPoints = await processSection(3, "G2",  (2 ** power) , curve.Fr.e(1), curContribution.key.tau.prvKey, "tauG2", progressOptions );
     curContribution.tauG2 = firstPoints[1];
     if (logger) logger.info(misc.formatHash(curContribution.tauG2, "tauG2: "));

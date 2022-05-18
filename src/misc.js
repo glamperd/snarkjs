@@ -58,7 +58,7 @@ export function log2( V )
 export function formatHash(b, title) {
     const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
     let S = "";
-    for (let i=0; i<4; i++) {
+    for (let i=0; i<b.byteLength/16; i++) {
         if (i>0) S += "\n";
         S += "\t\t";
         for (let j=0; j<4; j++) {
