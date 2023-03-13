@@ -22,6 +22,7 @@ import Blake2b from "blake2b-wasm";
 import * as utils from "./powersoftau_utils.js";
 import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
+import { getCurveFromQ } from "./curves.js";
 
 export default async function importResponse(oldPtauFilename, contributionFilename, newPTauFilename, name, importPoints, logger) {
 
@@ -30,17 +31,27 @@ export default async function importResponse(oldPtauFilename, contributionFilena
     const noHash = new Uint8Array(64);
     for (let i=0; i<64; i++) noHash[i] = 0xFF;
 
-    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
-    const {curve, power} = await utils.readPTauHeader(fdOld, sections);
-    const contributions = await utils.readContributions(fdOld, curve, sections);
+    let fdOld, curve, power, contributions;
+
+    if (oldPtauFilename.endsWith(".json")) {
+        const jsonData = JSON.parse(oldPtauFilename);
+        ({contributions, power} = jsonData);
+        // get curve from q
+        curve = getCurveFromQ(jsonData.q);
+        // no points (sections !)
+    } else {
+        let {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
+        ({curve, power} = await utils.readPTauHeader(fdOld, sections));
+        contributions = await utils.readContributions(fdOld, curve, sections);
+    }
     const currentContribution = {};
 
     if (name) currentContribution.name = name;
 
     const sG1 = curve.F1.n8*2;
-    const scG1 = curve.F1.n8; // Compresed size
+    const scG1 = curve.F1.n8; // Compressed size
     const sG2 = curve.F2.n8*2;
-    const scG2 = curve.F2.n8; // Compresed size
+    const scG2 = curve.F2.n8; // Compressed size
 
     const fdResponse = await fastFile.readExisting(contributionFilename);
 
@@ -126,7 +137,7 @@ export default async function importResponse(oldPtauFilename, contributionFilena
 
     await fdResponse.close();
     await fdNew.close();
-    await fdOld.close();
+    if (fdOld) await fdOld.close();
 
     return currentContribution.nextChallenge;
 
