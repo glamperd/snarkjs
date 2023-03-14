@@ -22,7 +22,9 @@ import Blake2b from "blake2b-wasm";
 import * as utils from "./powersoftau_utils.js";
 import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
-import { getCurveFromQ } from "./curves.js";
+import { getCurveFromName } from "./curves.js";
+import * as fs from 'fs';
+import { Scalar } from "ffjavascript";
 
 export default async function importResponse(oldPtauFilename, contributionFilename, newPTauFilename, name, importPoints, logger) {
 
@@ -34,11 +36,17 @@ export default async function importResponse(oldPtauFilename, contributionFilena
     let fdOld, curve, power, contributions;
 
     if (oldPtauFilename.endsWith(".json")) {
-        const jsonData = JSON.parse(oldPtauFilename);
-        ({contributions, power} = jsonData);
+        const jsonData = fs.readFileSync(oldPtauFilename);
+        const jsonObj = JSON.parse(jsonData);
+        ({contributions, power} = jsonObj);
         // get curve from q
-        curve = getCurveFromQ(jsonData.q);
+        if (logger) logger.info("q = " + jsonObj.q.toString());
+        const qs = Scalar.e(jsonObj.q);
+        //curve = getCurveFromQ(qs);
+        curve = await getCurveFromName("BN128");
+        if (logger) logger.info("qs " + qs.toString());
         // no points (sections !)
+        if (logger) logger.info("have curve " + (curve.F1 == undefined));
     } else {
         let {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
         ({curve, power} = await utils.readPTauHeader(fdOld, sections));
