@@ -22,7 +22,7 @@ import Blake2b from "blake2b-wasm";
 import * as utils from "./powersoftau_utils.js";
 import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
-import { getCurveFromName } from "./curves.js";
+import { getCurveFromQ } from "./curves.js";
 import * as fs from 'fs';
 import { Scalar } from "ffjavascript";
 
@@ -33,24 +33,29 @@ export default async function importResponse(oldPtauFilename, contributionFilena
     const noHash = new Uint8Array(64);
     for (let i=0; i<64; i++) noHash[i] = 0xFF;
 
-    let fdOld, curve, power, contributions;
+    let curve, power, contributions;
 
     if (oldPtauFilename.endsWith(".json")) {
         const jsonData = fs.readFileSync(oldPtauFilename);
         const jsonObj = JSON.parse(jsonData);
         ({contributions, power} = jsonObj);
+
         // get curve from q
-        if (logger) logger.info("q = " + jsonObj.q.toString());
         const qs = Scalar.e(jsonObj.q);
-        //curve = getCurveFromQ(qs);
-        curve = await getCurveFromName("BN128");
-        if (logger) logger.info("qs " + qs.toString());
+        curve = await getCurveFromQ(qs);
         // no points (sections !)
-        if (logger) logger.info("have curve " + (curve.F1 == undefined));
+        // Convert contribution hashes to Scalar
+        for (const i in contributions) {
+            if (logger) logger.info("nextChallenge=" + contributions[i]);
+            const s = Scalar.e(contributions[i].nextChallenge);
+            contributions[i].nextChallenge = Scalar.toArray(s, 256);
+        }
+
     } else {
-        let {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
+        const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
         ({curve, power} = await utils.readPTauHeader(fdOld, sections));
         contributions = await utils.readContributions(fdOld, curve, sections);
+        await fdOld.close();
     }
     const currentContribution = {};
 
@@ -91,8 +96,15 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         contributions[contributions.length-1].nextChallenge = lastChallengeHash;
     }
 
-    if(!misc.hashIsEqual(contributionPreviousHash,lastChallengeHash))
+    if(!misc.hashIsEqual(contributionPreviousHash,lastChallengeHash)) {
+        if (logger) {
+            logger.info("prev hash " + contributionPreviousHash.toString());
+            misc.formatHash(contributionPreviousHash, "Prev hash");
+            logger.info("last hash type" + typeof(lastChallengeHash));
+            misc.formatHash(lastChallengeHash, "Last challenge hash");
+        }
         throw new Error("Wrong contribution. This contribution is not based on the previous hash");
+    }
 
     const hasherResponse = new Blake2b(64);
     hasherResponse.update(contributionPreviousHash);
@@ -145,7 +157,6 @@ export default async function importResponse(oldPtauFilename, contributionFilena
 
     await fdResponse.close();
     await fdNew.close();
-    if (fdOld) await fdOld.close();
 
     return currentContribution.nextChallenge;
 
