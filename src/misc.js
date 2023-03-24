@@ -70,6 +70,17 @@ export function formatHash(b, title) {
     return S;
 }
 
+export function hashToHex(b) {
+    const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    let S = "";
+    for (let i=0; i<4; i++) {
+        for (let j=0; j<4; j++) {
+            S += a.getUint32(i*16+j*4).toString(16).padStart(8, "0");
+        }
+    }
+    return S;
+}
+
 export function hashIsEqual(h1, h2) {
     if (h1.byteLength != h2.byteLength) return false;
     var dv1 = new Int8Array(h1);

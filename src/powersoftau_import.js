@@ -46,9 +46,11 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         // no points (sections !)
         // Convert contribution hashes to Scalar
         for (const i in contributions) {
-            if (logger) logger.info("nextChallenge=" + contributions[i]);
-            const s = Scalar.e(contributions[i].nextChallenge);
-            contributions[i].nextChallenge = Scalar.toArray(s, 256);
+            //if (logger) logger.info("nextChallenge=" + contributions[i].toString());
+            // TODO parse from hex
+            const s = curve.Fr.fromRprLEM(contributions[i].nextChallenge);
+            if (logger) logger.info("next challenge: " + s.toString());
+            contributions[i].nextChallenge = s;
         }
 
     } else {
@@ -99,9 +101,9 @@ export default async function importResponse(oldPtauFilename, contributionFilena
     if(!misc.hashIsEqual(contributionPreviousHash,lastChallengeHash)) {
         if (logger) {
             logger.info("prev hash " + contributionPreviousHash.toString());
-            misc.formatHash(contributionPreviousHash, "Prev hash");
+            logger.info(misc.formatHash(contributionPreviousHash, "Prev hash"));
             logger.info("last hash type" + typeof(lastChallengeHash));
-            misc.formatHash(lastChallengeHash, "Last challenge hash");
+            logger.info(misc.formatHash(lastChallengeHash, "Last challenge hash"));
         }
         throw new Error("Wrong contribution. This contribution is not based on the previous hash");
     }
@@ -256,6 +258,25 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         }
 
         fdTo.pos = oldPos;
+    }
+
+    function bnToBuf(bn) {
+        // eslint-disable-next-line no-undef
+        var hex = BigInt(bn).toString(16);
+        if (hex.length % 2) { hex = "0" + hex; }
+      
+        var len = hex.length / 2;
+        var u8 = new Uint8Array(len);
+      
+        var i = 0;
+        var j = 0;
+        while (i < len) {
+            u8[i] = parseInt(hex.slice(j, j+2), 16);
+            i += 1;
+            j += 2;
+        }
+      
+        return u8;
     }
 
 }
