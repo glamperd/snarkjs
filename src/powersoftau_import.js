@@ -46,9 +46,7 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         // no points (sections !)
         // Convert contribution hashes to Scalar
         for (const i in contributions) {
-            //if (logger) logger.info("nextChallenge=" + contributions[i].toString());
-            // TODO parse from hex
-            const s = curve.Fr.fromRprLEM(contributions[i].nextChallenge);
+            const s = Buffer.from(contributions[i].nextChallenge, "hex");
             if (logger) logger.info("next challenge: " + s.toString());
             contributions[i].nextChallenge = s;
         }
