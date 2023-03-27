@@ -56,14 +56,14 @@ export function log2( V )
 
 
 export function formatHash(b, title) {
-    const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const a = hashToHex(b);
     let S = "";
     for (let i=0; i<4; i++) {
         if (i>0) S += "\n";
         S += "\t\t";
         for (let j=0; j<4; j++) {
             if (j>0) S += " ";
-            S += a.getUint32(i*16+j*4).toString(16).padStart(8, "0");
+            S += a.substring(i*32 + j*8, i*32 + j*8 + 8);
         }
     }
     if (title) S = title + "\n" + S;
@@ -73,10 +73,8 @@ export function formatHash(b, title) {
 export function hashToHex(b) {
     const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
     let S = "";
-    for (let i=0; i<4; i++) {
-        for (let j=0; j<4; j++) {
-            S += a.getUint32(i*16+j*4).toString(16).padStart(8, "0");
-        }
+    for (let i=0; i<16; i++) {
+        S += a.getUint32(i*4).toString(16).padStart(8, "0");        
     }
     return S;
 }

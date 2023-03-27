@@ -47,7 +47,7 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         // Convert contribution hashes to Scalar
         for (const i in contributions) {
             const s = Buffer.from(contributions[i].nextChallenge, "hex");
-            if (logger) logger.info("next challenge: " + s.toString());
+            //if (logger) logger.info("next challenge: " + s.toString());
             contributions[i].nextChallenge = s;
         }
 
@@ -98,9 +98,9 @@ export default async function importResponse(oldPtauFilename, contributionFilena
 
     if(!misc.hashIsEqual(contributionPreviousHash,lastChallengeHash)) {
         if (logger) {
-            logger.info("prev hash " + contributionPreviousHash.toString());
+            //logger.info("prev hash " + contributionPreviousHash.toString());
             logger.info(misc.formatHash(contributionPreviousHash, "Prev hash"));
-            logger.info("last hash type" + typeof(lastChallengeHash));
+            //logger.info("last hash type" + typeof(lastChallengeHash));
             logger.info(misc.formatHash(lastChallengeHash, "Last challenge hash"));
         }
         throw new Error("Wrong contribution. This contribution is not based on the previous hash");
