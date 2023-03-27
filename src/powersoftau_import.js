@@ -49,6 +49,11 @@ export default async function importResponse(oldPtauFilename, contributionFilena
             const s = Buffer.from(contributions[i].nextChallenge, "hex");
             //if (logger) logger.info("next challenge: " + s.toString());
             contributions[i].nextChallenge = s;
+            contributions[i].tauG1 = curve.G1.fromRprCompressed(bnToBuf(contributions[i].tauG1),0);
+            contributions[i].tauG2 = bnToBuf(contributions[i].tauG2);
+            contributions[i].alphaG1 = bnToBuf(contributions[i].alphaG1);
+            contributions[i].betaG1 = bnToBuf(contributions[i].betaG1);
+            contributions[i].betaG2 = bnToBuf(contributions[i].betaG2);
         }
 
     } else {
