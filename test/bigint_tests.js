@@ -37,7 +37,8 @@ describe("snarkjs: Test functions on bigint", function () {
     let curve;
     let sFr;
     const g1Point = "10206942746448050477810040810960330180854804500791464218602135135690739158704";
-    
+    //"10846972369855639959070943271030702046857954651929193405325086722777336266509";
+    //"5109090506793884460475387183150347085238297926767486536648058058495692924602";
 
     before(async () => {
         curve = await getCurveFromName("bn128");
@@ -57,13 +58,15 @@ describe("snarkjs: Test functions on bigint", function () {
 
     it("should handle serialise/deserialise", async () => {
         const g1Buff = utils.unstringifyFElements(curve.Fr, g1Point);
-        //assert.equal(sFr * 2, g1Buff.length);
+        const g1U = curve.G1.fromRprCompressed(g1Buff, 0);
+        assert.equal(sFr * 2, g1U.length);
         //console.info("point: " + await curve.G1.toString(g1Buff, 16));
 
         // const g1Affine = await curve.G1.toAffine(g1Buff);
         // assert.equal(sFr * 2, g1Affine.length);
         // console.info("affine: " + await curve.G1.toString(g1Affine, 16));
 
+        //const g1C = curve.G1.fromRprUncompressed(g1U, 0);
         const s = await curve.Fr.toString(g1Buff, 10);
         console.info("g1 point as string: " + s);
         assert.equal(s, g1Point);
