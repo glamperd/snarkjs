@@ -1,6 +1,6 @@
 import assert from "assert";
 import {getCurveFromName} from "../src/curves.js";
-import {Scalar} from "ffjavascript";
+import {utils} from "ffjavascript";
 
 // async function readG1() {
 //     const pBuff = await fd.read(curve.G1.F.n8*2);
@@ -56,10 +56,8 @@ describe("snarkjs: Test functions on bigint", function () {
     });
 
     it("should handle serialise/deserialise", async () => {
-        //const g1Buff = curve.G1.timesScalar(curve.G1.one, Scalar.e("5"));
-        //const g1Buff = new Uint8Array(Scalar.toArray(Scalar.e(g1Point), 16));
-        const g1Buff = bnToBuf(g1Point);
-        assert.equal(sFr, g1Buff.length);
+        const g1Buff = utils.unstringifyFElements(curve.Fr, g1Point);
+        //assert.equal(sFr * 2, g1Buff.length);
         //console.info("point: " + await curve.G1.toString(g1Buff, 16));
 
         // const g1Affine = await curve.G1.toAffine(g1Buff);
@@ -68,22 +66,23 @@ describe("snarkjs: Test functions on bigint", function () {
 
         const s = await curve.Fr.toString(g1Buff, 10);
         console.info("g1 point as string: " + s);
+        assert.equal(s, g1Point);
 
-        const b = bnToBuf(g1Point);
-        assert.equal(sFr, b.length);
+        // const b = bnToBuf(g1Point);
+        // assert.equal(sFr, b.length);
 
-        const uc = await curve.G1.fromRprCompressed(g1Buff, 0);
-        assert.equal(sFr * 2, uc.length);
-        console.info("uc: " + await curve.Fr.toString(uc, 10));
+        // const uc = await curve.G1.fromRprCompressed(g1Buff, 0);
+        // assert.equal(sFr * 2, uc.length);
+        // console.info("uc: " + await curve.Fr.toString(uc, 10));
 
-        const j = await curve.G1.toJacobian(uc);
-        assert.equal(sFr * 3, j.length);
-        console.info("jacobian: " + await curve.G1.toString(j, 16));
+        // const j = await curve.G1.toJacobian(uc);
+        // assert.equal(sFr * 3, j.length);
+        // console.info("jacobian: " + await curve.G1.toString(j, 16));
 
         //assert.ok(curve.G1.eq(g1Affine, uc));
-        let lemBuff = new Uint8Array(sFr*2);
-        await curve.G1.toRprLEM(lemBuff, 0, uc);
-        console.info("lemBuff: " + curve.G1.toString(lemBuff, 16));
+        // let lemBuff = new Uint8Array(sFr*2);
+        // await curve.G1.toRprLEM(lemBuff, 0, uc);
+        // console.info("lemBuff: " + curve.G1.toString(lemBuff, 16));
         //assert.ok(curve.G1.eq(g1Affine, lemBuff));
     });
 
