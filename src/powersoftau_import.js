@@ -41,7 +41,7 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         ({contributions, power} = jsonObj);
 
         // get curve from q
-        const qs = Scalar.e(jsonObj.q);
+        const qs = Scalar.fromArray(misc.hex2ByteArray(jsonObj.q), 256);
         curve = await getCurveFromQ(qs);
         // no points (sections !)
         // Convert contribution hashes to Scalar
@@ -49,11 +49,11 @@ export default async function importResponse(oldPtauFilename, contributionFilena
             const s = Buffer.from(contributions[i].nextChallenge, "hex");
             //if (logger) logger.info("next challenge: " + s.toString());
             contributions[i].nextChallenge = s;
-            contributions[i].tauG1 = ffUtils.unstringifyFElements(curve.Fr, contributions[i].tauG1);
-            contributions[i].tauG2 = bnToBuf(contributions[i].tauG2);
-            contributions[i].alphaG1 = bnToBuf(contributions[i].alphaG1);
-            contributions[i].betaG1 = bnToBuf(contributions[i].betaG1);
-            contributions[i].betaG2 = bnToBuf(contributions[i].betaG2);
+            contributions[i].tauG1 = misc.hex2ByteArray(contributions[i].tauG1);
+            contributions[i].tauG2 = misc.hex2ByteArray(contributions[i].tauG2);
+            contributions[i].alphaG1 = misc.hex2ByteArray(contributions[i].alphaG1);
+            contributions[i].betaG1 = misc.hex2ByteArray(contributions[i].betaG1);
+            contributions[i].betaG2 = misc.hex2ByteArray(contributions[i].betaG2);
         }
 
     } else {

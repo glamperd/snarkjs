@@ -187,7 +187,7 @@ export function byteArray2hex(byteArray) {
 
 export function stringifyBigIntsWithField(Fr, o) {
     if (o instanceof Uint8Array)  {
-        return Fr.toString(o);
+        return byteArray2hex(o);
     } else if (Array.isArray(o)) {
         return o.map(stringifyBigIntsWithField.bind(null, Fr));
     } else if (typeof o == "object") {
@@ -198,7 +198,7 @@ export function stringifyBigIntsWithField(Fr, o) {
         });
         return res;
     } else if ((typeof(o) == "bigint") || o.eq !== undefined)  {
-        return o.toString(10);
+        return o.toString(16);
     } else {
         return o;
     }

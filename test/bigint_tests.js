@@ -66,8 +66,9 @@ describe("snarkjs: Test functions on bigint", function () {
         // assert.equal(sFr * 2, g1Affine.length);
         // console.info("affine: " + await curve.G1.toString(g1Affine, 16));
 
-        //const g1C = curve.G1.fromRprUncompressed(g1U, 0);
-        const s = await curve.Fr.toString(g1Buff, 10);
+        // const buff = new Uint8Array(sFr*2);
+        // await curve.G1.toRprLEM(buff, 0, g1U);
+        const s = await curve.Fr.toString(g1U, 10);
         console.info("g1 point as string: " + s);
         assert.equal(s, g1Point);
 
