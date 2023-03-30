@@ -46,14 +46,16 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         // no points (sections !)
         // Convert contribution hashes to Scalar
         for (const i in contributions) {
-            const s = Buffer.from(contributions[i].nextChallenge, "hex");
-            //if (logger) logger.info("next challenge: " + s.toString());
-            contributions[i].nextChallenge = s;
+            contributions[i].nextChallenge = misc.hex2ByteArray(contributions[i].nextChallenge);
+            contributions[i].partialHash = misc.hex2ByteArray(contributions[i].partialHash);
+            contributions[i].responseHash = misc.hex2ByteArray(contributions[i].responseHash);
             contributions[i].tauG1 = misc.hex2ByteArray(contributions[i].tauG1);
             contributions[i].tauG2 = misc.hex2ByteArray(contributions[i].tauG2);
             contributions[i].alphaG1 = misc.hex2ByteArray(contributions[i].alphaG1);
             contributions[i].betaG1 = misc.hex2ByteArray(contributions[i].betaG1);
             contributions[i].betaG2 = misc.hex2ByteArray(contributions[i].betaG2);
+            contributions[i].key = deserialiseKey(contributions[i].key);
+
         }
 
     } else {
@@ -280,6 +282,27 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         }
       
         return u8;
+    }
+
+    // Convert contriution key from JSON format
+    function deserialiseKey(key) {
+        let newKey = {
+            alpha: {},
+            beta: {},
+            tau: {}
+        };
+
+        newKey.alpha.g1_s = misc.hex2ByteArray(key.alpha.g1_s);
+        newKey.alpha.g1_sx = misc.hex2ByteArray(key.alpha.g1_sx);
+        newKey.alpha.g2_spx = misc.hex2ByteArray(key.alpha.g2_spx);
+        newKey.beta.g1_s = misc.hex2ByteArray(key.beta.g1_s);
+        newKey.beta.g1_sx = misc.hex2ByteArray(key.beta.g1_sx);
+        newKey.beta.g2_spx = misc.hex2ByteArray(key.beta.g2_spx);
+        newKey.tau.g1_s = misc.hex2ByteArray(key.tau.g1_s);
+        newKey.tau.g1_sx = misc.hex2ByteArray(key.tau.g1_sx);
+        newKey.tau.g2_spx = misc.hex2ByteArray(key.tau.g2_spx);
+
+        return newKey;
     }
 
 }
