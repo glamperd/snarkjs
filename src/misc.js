@@ -73,7 +73,7 @@ export function formatHash(b, title) {
 export function hashToHex(b) {
     const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
     let S = "";
-    for (let i=0; i<16; i++) {
+    for (let i=0; i<a.byteLength / 4; i++) {
         S += a.getUint32(i*4).toString(16).padStart(8, "0");        
     }
     return S;
@@ -198,7 +198,7 @@ export function stringifyBigIntsWithField(Fr, o) {
         });
         return res;
     } else if ((typeof(o) == "bigint") || o.eq !== undefined)  {
-        return o.toString(16);
+        return o.toString(10);
     } else {
         return o;
     }

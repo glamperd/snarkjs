@@ -160,7 +160,7 @@ export async function writePtauPubKey(fd, curve, key, montgomery) {
     await fd.write(buff);
 }
 
-async function readContribution(fd, curve, formatted = false) {
+async function readContribution(fd, curve) {
     const c = {};
 
     c.tauG1 = await readG1();
@@ -171,10 +171,6 @@ async function readContribution(fd, curve, formatted = false) {
     c.key = await readPtauPubKey(fd, curve, true);
     c.partialHash = await fd.read(216);
     c.nextChallenge = await fd.read(64);
-    if (formatted) {
-        c.partialHash = misc.hashToHex(c.partialHash);
-        c.nextChallenge = misc.hashToHex(c.nextChallenge);
-    }
     c.type = await fd.readULE32();
 
     const buffV  = new Uint8Array(curve.G1.F.n8*2*6+curve.G2.F.n8*2*3);
@@ -184,9 +180,6 @@ async function readContribution(fd, curve, formatted = false) {
     responseHasher.setPartialHash(c.partialHash);
     responseHasher.update(buffV);
     c.responseHash = responseHasher.digest();
-    if (formatted) {
-        c.responseHash = misc.hashToHex(c.responseHash);
-    }
 
     const paramLength = await fd.readULE32();
     const curPos = fd.pos;
@@ -231,7 +224,7 @@ async function readContribution(fd, curve, formatted = false) {
     }
 }
 
-export async function readContributions(fd, curve, sections, formatted = false) {
+export async function readContributions(fd, curve, sections) {
     if (!sections[7])  throw new Error(fd.fileName + ": File has no  contributions");
     if (sections[7][0].length>1) throw new Error(fd.fileName +": File has more than one contributions section");
 
@@ -239,7 +232,7 @@ export async function readContributions(fd, curve, sections, formatted = false) 
     const nContributions = await fd.readULE32();
     const contributions = [];
     for (let i=0; i<nContributions; i++) {
-        const c = await readContribution(fd, curve, formatted);
+        const c = await readContribution(fd, curve);
         c.id = i+1;
         contributions.push(c);
     }

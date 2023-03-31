@@ -41,10 +41,10 @@ export default async function importResponse(oldPtauFilename, contributionFilena
         ({contributions, power} = jsonObj);
 
         // get curve from q
-        const qs = Scalar.fromArray(misc.hex2ByteArray(jsonObj.q), 256);
+        const qs = Scalar.e(jsonObj.q);
         curve = await getCurveFromQ(qs);
         // no points (sections !)
-        // Convert contribution hashes to Scalar
+        // Convert contribution hashes 
         for (const i in contributions) {
             contributions[i].nextChallenge = misc.hex2ByteArray(contributions[i].nextChallenge);
             contributions[i].partialHash = misc.hex2ByteArray(contributions[i].partialHash);
@@ -55,7 +55,6 @@ export default async function importResponse(oldPtauFilename, contributionFilena
             contributions[i].betaG1 = misc.hex2ByteArray(contributions[i].betaG1);
             contributions[i].betaG2 = misc.hex2ByteArray(contributions[i].betaG2);
             contributions[i].key = deserialiseKey(contributions[i].key);
-
         }
 
     } else {

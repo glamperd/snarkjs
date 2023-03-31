@@ -29,7 +29,7 @@ export default async function exportJson(pTauFilename, verbose) {
     const pTau = {};
     pTau.q = curve.q;
     pTau.power = power;
-    pTau.contributions = await utils.readContributions(fd, curve, sections, true);
+    pTau.contributions = await utils.readContributions(fd, curve, sections);
 
     if (sections[2]) {
         pTau.tauG1 = await exportSection(2, "G1", (2 ** power)*2 -1, "tauG1");
