@@ -20,6 +20,7 @@
 export {default as newAccumulator} from "./powersoftau_new.js";
 export {default as exportChallenge} from "./powersoftau_export_challenge.js";
 export {default as importResponse} from "./powersoftau_import.js";
+export {default as importPrepared} from "./powersoftau_import_prepared.js";
 export {default as verify} from "./powersoftau_verify.js";
 export {default as challengeContribute} from "./powersoftau_challenge_contribute.js";
 export {default as beacon} from "./powersoftau_beacon.js";
