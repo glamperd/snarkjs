@@ -82,15 +82,15 @@ const commands = [
         action: powersOfTauChallengeContribute
     },
     {
-        cmd: "powersoftau import response <powersoftau_old.ptau> <response> <<powersoftau_new.ptau>",
+        cmd: "powersoftau import response <powersoftau_old.ptau> <response> <powersoftau_new.ptau>",
         description: "import a response to a ptau file",
         alias: ["ptir"],
         options: "-verbose|v -nopoints -nocheck -name|n",
         action: powersOfTauImport
     },
     {
-        cmd: "powersoftau import prepared <response> <<powersoftau_new.ptau>",
-        description: "import a prepared Bellman file to a ptau file",
+        cmd: "powersoftau import prepared <prepared> <powersoftau_new.ptau> <powers>",
+        description: "convert a prepared Bellman file to a ptau file",
         alias: ["ptip"],
         options: "-verbose|v ",
         action: powersOfTauImportPrepared
@@ -764,13 +764,15 @@ async function powersOfTauImport(params, options) {
 async function powersOfTauImportPrepared(params, options) {
     let response;
     let newPtauName;
+    let power;
 
     response = params[0];
     newPtauName = params[1];
+    power = params[2];
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    const res = await powersOfTau.importResponsePrepared(response, newPtauName, logger);
+    const res = await powersOfTau.importPrepared(response, newPtauName, power, logger);
 
     if (res) return res;
     return;
