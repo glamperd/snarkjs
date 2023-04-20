@@ -59,48 +59,53 @@ export default async function importPrepared( contributionFilename, newPTauFilen
     const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 10);
     await utils.writePTauHeader(fdNew, curve, power);
 
-    //const contributionPreviousHash = await fdResponse.read(64);
+    const contributionPreviousHash = noHash; //await fdResponse.read(64);
+    const hasherResponse = new Blake2b(64);
+    hasherResponse.update(contributionPreviousHash);
+
 
     const startSections = [];
     let res;
     res = await processSection(fdResponse, fdNew, "G1", 4, 1, [0], "alphaG1");
     res = await processSection(fdResponse, fdNew, "G1", 5, 1, [0], "betaG1");
     res = await processSection(fdResponse, fdNew, "G2", 6, 1, [0], "betaG2");
-    res = await processSection(fdResponse, fdNew, "G1", 12, (2 ** power), [1], "tauG1");
+    currentContribution.betaG2 = res[0];
+    res = await processSection(fdResponse, fdNew, "G1", 12, (2 ** power), [0], "tauG1");
     currentContribution.tauG1 = res[0];
-    res = await processSection(fdResponse, fdNew, "G2", 13, (2 ** power), [1], "tauG2");
+    res = await processSection(fdResponse, fdNew, "G2", 13, (2 ** power), [0], "tauG2");
     currentContribution.tauG2 = res[0];
     res = await processSection(fdResponse, fdNew, "G1", 14, (2 ** power), [0], "alphaG1");
     currentContribution.alphaG1 = res[0];
     res = await processSection(fdResponse, fdNew, "G1", 15, (2 ** power), [0], "betaG1");
     currentContribution.betaG1 = res[0];
 
-    //currentContribution.partialHash = hasherResponse.getPartialHash();
+    currentContribution.partialHash = hasherResponse.getPartialHash();
 
 
-    //const buffKey = await fdResponse.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
+    const buffKey = new Uint8Array(curve.F1.n8*2*6+curve.F2.n8*2*3); //await fdResponse.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
 
-    //currentContribution.key = utils.fromPtauPubKeyRpr(buffKey, 0, curve, false);
+    currentContribution.key = utils.fromPtauPubKeyRpr(buffKey, 0, curve, false);
 
     //hasherResponse.update(new Uint8Array(buffKey));
-    //const hashResponse = hasherResponse.digest();
+    const hashResponse = hasherResponse.digest();
 
-    //if (logger) logger.info(misc.formatHash(hashResponse, "Contribution Response Hash imported: "));
+    if (logger) logger.info(misc.formatHash(hashResponse, "Contribution Response Hash imported: "));
 
     const nextChallengeHasher = new Blake2b(64);
-    //nextChallengeHasher.update(hashResponse);
+    nextChallengeHasher.update(hashResponse);
 
-    // await hashSection(nextChallengeHasher, fdNew, "G1", 2, (2 ** power) * 2 -1, "tauG1", logger);
-    // await hashSection(nextChallengeHasher, fdNew, "G2", 3, (2 ** power)       , "tauG2", logger);
-    // await hashSection(nextChallengeHasher, fdNew, "G1", 4, (2 ** power)       , "alphaTauG1", logger);
-    // await hashSection(nextChallengeHasher, fdNew, "G1", 5, (2 ** power)       , "betaTauG1", logger);
-    // await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1                  , "betaG2", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 12, (2 ** power) , "tauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G2", 13, (2 ** power) , "tauG2", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 14, (2 ** power) , "alphaTauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 15, (2 ** power) , "betaTauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1             , "betaG2", logger);
 
     currentContribution.nextChallenge = nextChallengeHasher.digest();
 
     if (logger) logger.info(misc.formatHash(currentContribution.nextChallenge, "Next Challenge Hash: "));
+    const contributions = [currentContribution];
 
-    //await utils.writeContributions(fdNew, curve, contributions);
+    await utils.writeContributions(fdNew, curve, contributions);
 
     await fdResponse.close();
     await fdNew.close();
