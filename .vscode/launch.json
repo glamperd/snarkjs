@@ -5,6 +5,71 @@
     "version": "0.2.0",
     "configurations": [
     {
+        "name": "json export",
+        "program": "${workspaceFolder}/build/cli.cjs",
+        "args": [
+            "powersoftau",
+            "export",
+            "json",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot-nopoints_0006.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_contribs_0006.json"
+        ],
+        "request": "launch",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "node"
+    },
+    {
+        "name": "pot import",
+        "program": "${workspaceFolder}/build/cli.cjs",
+        "args": [
+            "powersoftau",
+            "import",
+            "response",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_contribs_0004.json",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\challenge_0004.response",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0006_imp.ptau"
+        ],
+        "request": "launch",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "node"
+    },
+    {
+        "name": "pot import prepared",
+        "program": "${workspaceFolder}/build/cli.cjs",
+        "args": [
+            "powersoftau",
+            "import",
+            "prepared",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\phase1radix2m0",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\converted_0.ptau",
+            "0"
+        ],
+        "request": "launch",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "node"
+    },
+    {
+        "name": "pot verify",
+        "program": "${workspaceFolder}/build/cli.cjs",
+        "args": [
+            "powersoftau",
+            "verify",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\converted_0.ptau",
+            "-v"
+        ],
+        "request": "launch",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "node"
+    },
+    {
         "name": "Attach",
         "port": 9229,
         "request": "attach",
