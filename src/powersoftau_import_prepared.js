@@ -90,11 +90,11 @@ export default async function importPrepared( contributionFilename, newPTauFilen
     const nextChallengeHasher = new Blake2b(64);
     //nextChallengeHasher.update(hashResponse);
 
-    await hashSection(nextChallengeHasher, fdNew, "G1", 2, (2 ** power) * 2 -1, "tauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G2", 3, (2 ** power)       , "tauG2", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G1", 4, (2 ** power)       , "alphaTauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G1", 5, (2 ** power)       , "betaTauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1                  , "betaG2", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 2, (2 ** power) * 2 -1, "tauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G2", 3, (2 ** power)       , "tauG2", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 4, (2 ** power)       , "alphaTauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 5, (2 ** power)       , "betaTauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1                  , "betaG2", logger);
 
     currentContribution.nextChallenge = nextChallengeHasher.digest();
 
