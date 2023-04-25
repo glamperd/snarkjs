@@ -103,7 +103,7 @@ export default async function importPrepared( contributionFilename, newPTauFilen
     currentContribution.nextChallenge = nextChallengeHasher.digest();
 
     if (logger) logger.info(misc.formatHash(currentContribution.nextChallenge, "Next Challenge Hash: "));
-    const contributions = [currentContribution];
+    const contributions = [];
 
     await utils.writeContributions(fdNew, curve, contributions);
 
