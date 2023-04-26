@@ -174,79 +174,90 @@ export default async function verify(tauFilename, logger) {
     // await test();
 
     // Verify Section tau*G1
-    if (logger) logger.debug("Verifying powers in tau*G1 section");
-    const rTau1 = await processSection(2, "G1", "tauG1", (2 ** power)*2-1, [0, 1], logger);
-    sr = await sameRatio(curve, rTau1.R1, rTau1.R2, curve.G2.g, curContr.tauG2);
-    if (sr !== true) {
-        if (logger) logger.error("tauG1 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G1.eq(curve.G1.g, rTau1.singularPoints[0])) {
-        if (logger) logger.error("First element of tau*G1 section must be the generator");
-        return false;
-    }
-    if (!curve.G1.eq(curContr.tauG1, rTau1.singularPoints[1])) {
-        if (logger) logger.error("Second element of tau*G1 section does not match the one in the contribution section");
-        return false;
+
+    if (sections[2]) {
+        if (logger) logger.debug("Verifying powers in tau*G1 section");
+        const rTau1 = await processSection(2, "G1", "tauG1", (2 ** power)*2-1, [0, 1], logger);
+        sr = await sameRatio(curve, rTau1.R1, rTau1.R2, curve.G2.g, curContr.tauG2);
+        if (sr !== true) {
+            if (logger) logger.error("tauG1 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G1.eq(curve.G1.g, rTau1.singularPoints[0])) {
+            if (logger) logger.error("First element of tau*G1 section must be the generator");
+            return false;
+        }
+        if (!curve.G1.eq(curContr.tauG1, rTau1.singularPoints[1])) {
+            if (logger) logger.error("Second element of tau*G1 section does not match the one in the contribution section");
+            return false;
+        }
     }
 
     // await test();
 
-    // Verify Section tau*G2
-    if (logger) logger.debug("Verifying powers in tau*G2 section");
-    const rTau2 = await processSection(3, "G2", "tauG2", 2 ** power, [0, 1],  logger);
-    sr = await sameRatio(curve, curve.G1.g, curContr.tauG1, rTau2.R1, rTau2.R2);
-    if (sr !== true) {
-        if (logger) logger.error("tauG2 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G2.eq(curve.G2.g, rTau2.singularPoints[0])) {
-        if (logger) logger.error("First element of tau*G2 section must be the generator");
-        return false;
-    }
-    if (!curve.G2.eq(curContr.tauG2, rTau2.singularPoints[1])) {
-        if (logger) logger.error("Second element of tau*G2 section does not match the one in the contribution section");
-        return false;
+    if (sections[3]) {
+        // Verify Section tau*G2
+        if (logger) logger.debug("Verifying powers in tau*G2 section");
+        const rTau2 = await processSection(3, "G2", "tauG2", 2 ** power, [0, 1],  logger);
+        sr = await sameRatio(curve, curve.G1.g, curContr.tauG1, rTau2.R1, rTau2.R2);
+        if (sr !== true) {
+            if (logger) logger.error("tauG2 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G2.eq(curve.G2.g, rTau2.singularPoints[0])) {
+            if (logger) logger.error("First element of tau*G2 section must be the generator");
+            return false;
+        }
+        if (!curve.G2.eq(curContr.tauG2, rTau2.singularPoints[1])) {
+            if (logger) logger.error("Second element of tau*G2 section does not match the one in the contribution section");
+            return false;
+        }
     }
 
     // Verify Section alpha*tau*G1
-    if (logger) logger.debug("Verifying powers in alpha*tau*G1 section");
-    const rAlphaTauG1 = await processSection(4, "G1", "alphatauG1", 2 ** power, [0], logger);
-    sr = await sameRatio(curve, rAlphaTauG1.R1, rAlphaTauG1.R2, curve.G2.g, curContr.tauG2);
-    if (sr !== true) {
-        if (logger) logger.error("alphaTauG1 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G1.eq(curContr.alphaG1, rAlphaTauG1.singularPoints[0])) {
-        if (logger) logger.error("First element of alpha*tau*G1 section (alpha*G1) does not match the one in the contribution section");
-        return false;
+    if (sections[4]) {
+        if (logger) logger.debug("Verifying powers in alpha*tau*G1 section");
+        const rAlphaTauG1 = await processSection(4, "G1", "alphatauG1", 2 ** power, [0], logger);
+        sr = await sameRatio(curve, rAlphaTauG1.R1, rAlphaTauG1.R2, curve.G2.g, curContr.tauG2);
+        if (sr !== true) {
+            if (logger) logger.error("alphaTauG1 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G1.eq(curContr.alphaG1, rAlphaTauG1.singularPoints[0])) {
+            if (logger) logger.error("First element of alpha*tau*G1 section (alpha*G1) does not match the one in the contribution section");
+            return false;
+        }
     }
 
     // Verify Section beta*tau*G1
-    if (logger) logger.debug("Verifying powers in beta*tau*G1 section");
-    const rBetaTauG1 = await processSection(5, "G1", "betatauG1", 2 ** power, [0], logger);
-    sr = await sameRatio(curve, rBetaTauG1.R1, rBetaTauG1.R2, curve.G2.g, curContr.tauG2);
-    if (sr !== true) {
-        if (logger) logger.error("betaTauG1 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G1.eq(curContr.betaG1, rBetaTauG1.singularPoints[0])) {
-        if (logger) logger.error("First element of beta*tau*G1 section (beta*G1) does not match the one in the contribution section");
-        return false;
+    if (sections[5]) {
+        if (logger) logger.debug("Verifying powers in beta*tau*G1 section");
+        const rBetaTauG1 = await processSection(5, "G1", "betatauG1", 2 ** power, [0], logger);
+        sr = await sameRatio(curve, rBetaTauG1.R1, rBetaTauG1.R2, curve.G2.g, curContr.tauG2);
+        if (sr !== true) {
+            if (logger) logger.error("betaTauG1 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G1.eq(curContr.betaG1, rBetaTauG1.singularPoints[0])) {
+            if (logger) logger.error("First element of beta*tau*G1 section (beta*G1) does not match the one in the contribution section");
+            return false;
+        }
     }
 
     //Verify Beta G2
-    const betaG2 = await processSectionBetaG2(logger);
-    if (!curve.G2.eq(curContr.betaG2, betaG2)) {
-        if (logger) logger.error("betaG2 element in betaG2 section does not match the one in the contribution section");
-        return false;
+    if (sections[6]) {
+        const betaG2 = await processSectionBetaG2(logger);
+        if (!curve.G2.eq(curContr.betaG2, betaG2)) {
+            if (logger) logger.error("betaG2 element in betaG2 section does not match the one in the contribution section");
+            return false;
+        }
     }
 
 
     const nextContributionHash = nextContributionHasher.digest();
 
     // Check the nextChallengeHash
-    if (power == ceremonyPower) {
+    if (power == ceremonyPower && sections[2]) {
         if (!misc.hashIsEqual(nextContributionHash,curContr.nextChallenge)) {
             if (logger) logger.error("Hash of the values does not match the next challenge of the last contributor in the contributions section");
             return false;
@@ -326,8 +337,8 @@ export default async function verify(tauFilename, logger) {
             throw new Error("File has no BetaG2 section");
         }
         if (sections[6].length>1) {
-            logger.error("File has no BetaG2 section");
-            throw new Error("File has more than one GetaG2 section");
+            logger.error("File has more than 1 BetaG2 section");
+            throw new Error("File has more than one BetaG2 section");
         }
         fd.pos = sections[6][0].p;
 
@@ -487,7 +498,7 @@ export default async function verify(tauFilename, logger) {
             const resLagrange = await G.multiExpAffine(buffG, buff_r, logger, sectionName + "_" + p + "_transformed");
 
             if (!G.eq(resTau, resLagrange)) {
-                if (logger) logger.error("Phase2 caclutation does not match with powers of tau");
+                if (logger) logger.error("Phase2 calculation does not match with powers of tau");
                 return false;
             }
 
