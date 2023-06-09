@@ -39,6 +39,7 @@ function _interopNamespace(e) {
 }
 
 var fs__default = /*#__PURE__*/_interopDefaultLegacy(fs);
+var fs__namespace = /*#__PURE__*/_interopNamespace(fs);
 var url__default = /*#__PURE__*/_interopDefaultLegacy(url);
 var fastFile__namespace = /*#__PURE__*/_interopNamespace(fastFile);
 var Blake2b__default = /*#__PURE__*/_interopDefaultLegacy(Blake2b);
@@ -221,17 +222,26 @@ function log2( V )
 
 
 function formatHash(b, title) {
-    const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const a = hashToHex(b);
     let S = "";
     for (let i=0; i<4; i++) {
         if (i>0) S += "\n";
         S += "\t\t";
         for (let j=0; j<4; j++) {
             if (j>0) S += " ";
-            S += a.getUint32(i*16+j*4).toString(16).padStart(8, "0");
+            S += a.substring(i*32 + j*8, i*32 + j*8 + 8);
         }
     }
     if (title) S = title + "\n" + S;
+    return S;
+}
+
+function hashToHex(b) {
+    const a = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    let S = "";
+    for (let i=0; i<a.byteLength / 4; i++) {
+        S += a.getUint32(i*4).toString(16).padStart(8, "0");        
+    }
     return S;
 }
 
@@ -343,7 +353,7 @@ function byteArray2hex(byteArray) {
 
 function stringifyBigIntsWithField(Fr, o) {
     if (o instanceof Uint8Array)  {
-        return Fr.toString(o);
+        return byteArray2hex(o);
     } else if (Array.isArray(o)) {
         return o.map(stringifyBigIntsWithField.bind(null, Fr));
     } else if (typeof o == "object") {
@@ -971,7 +981,7 @@ async function readContribution$1(fd, curve) {
         }
     }
     if (fd.pos != curPos + paramLength) {
-        throw new Error("Parametes do not match");
+        throw new Error("Parameters do not match");
     }
 
     return c;
@@ -1326,17 +1336,44 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
     const noHash = new Uint8Array(64);
     for (let i=0; i<64; i++) noHash[i] = 0xFF;
 
-    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
-    const {curve, power} = await readPTauHeader(fdOld, sections);
-    const contributions = await readContributions(fdOld, curve, sections);
+    let curve, power, contributions;
+
+    if (oldPtauFilename.endsWith(".json")) {
+        const jsonData = fs__namespace.readFileSync(oldPtauFilename);
+        const jsonObj = JSON.parse(jsonData);
+        ({contributions, power} = jsonObj);
+
+        // get curve from q
+        const qs = ffjavascript.Scalar.e(jsonObj.q);
+        curve = await getCurveFromQ(qs);
+        // no points (sections !)
+        // Convert contribution hashes 
+        for (const i in contributions) {
+            contributions[i].nextChallenge = hex2ByteArray(contributions[i].nextChallenge);
+            contributions[i].partialHash = hex2ByteArray(contributions[i].partialHash);
+            contributions[i].responseHash = hex2ByteArray(contributions[i].responseHash);
+            contributions[i].tauG1 = hex2ByteArray(contributions[i].tauG1);
+            contributions[i].tauG2 = hex2ByteArray(contributions[i].tauG2);
+            contributions[i].alphaG1 = hex2ByteArray(contributions[i].alphaG1);
+            contributions[i].betaG1 = hex2ByteArray(contributions[i].betaG1);
+            contributions[i].betaG2 = hex2ByteArray(contributions[i].betaG2);
+            contributions[i].key = deserialiseKey(contributions[i].key);
+        }
+
+    } else {
+        const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+        ({curve, power} = await readPTauHeader(fdOld, sections));
+        contributions = await readContributions(fdOld, curve, sections);
+        await fdOld.close();
+    }
     const currentContribution = {};
 
     if (name) currentContribution.name = name;
 
     const sG1 = curve.F1.n8*2;
-    const scG1 = curve.F1.n8; // Compresed size
+    const scG1 = curve.F1.n8; // Compressed size
     const sG2 = curve.F2.n8*2;
-    const scG2 = curve.F2.n8; // Compresed size
+    const scG2 = curve.F2.n8; // Compressed size
 
     const fdResponse = await fastFile__namespace.readExisting(contributionFilename);
 
@@ -1354,8 +1391,6 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
 
     if (contributions.length>0) {
         lastChallengeHash = contributions[contributions.length-1].nextChallenge;
-    } else {
-        lastChallengeHash = calculateFirstChallengeHash(curve, power, logger);
     }
 
     const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, importPoints ? 7: 2);
@@ -1363,13 +1398,20 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
 
     const contributionPreviousHash = await fdResponse.read(64);
 
-    if (hashIsEqual(noHash,lastChallengeHash)) {
+    if (lastChallengeHash && hashIsEqual(noHash,lastChallengeHash)) {
         lastChallengeHash = contributionPreviousHash;
         contributions[contributions.length-1].nextChallenge = lastChallengeHash;
     }
 
-    if(!hashIsEqual(contributionPreviousHash,lastChallengeHash))
+    if(lastChallengeHash && !hashIsEqual(contributionPreviousHash,lastChallengeHash)) {
+        if (logger) {
+            //logger.info("prev hash " + contributionPreviousHash.toString());
+            logger.info(formatHash(contributionPreviousHash, "Prev hash"));
+            //logger.info("last hash type" + typeof(lastChallengeHash));
+            logger.info(formatHash(lastChallengeHash, "Last challenge hash"));
+        }
         throw new Error("Wrong contribution. This contribution is not based on the previous hash");
+    }
 
     const hasherResponse = new Blake2b__default["default"](64);
     hasherResponse.update(contributionPreviousHash);
@@ -1422,7 +1464,6 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
 
     await fdResponse.close();
     await fdNew.close();
-    await fdOld.close();
 
     return currentContribution.nextChallenge;
 
@@ -1500,6 +1541,198 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
         return singularPoints;
     }
 
+
+    async function hashSection(nextChallengeHasher, fdTo, groupName, sectionId, nPoints, sectionName, logger) {
+
+        const G = curve[groupName];
+        const sG = G.F.n8*2;
+        const nPointsChunk = Math.floor((1<<24)/sG);
+
+        const oldPos = fdTo.pos;
+        fdTo.pos = startSections[sectionId];
+
+        for (let i=0; i< nPoints; i += nPointsChunk) {
+            if (logger) logger.debug(`Hashing ${sectionName}: ${i}/${nPoints}`);
+            const n = Math.min(nPoints-i, nPointsChunk);
+
+            const buffLEM = await fdTo.read(n * sG);
+
+            const buffU = await G.batchLEMtoU(buffLEM);
+
+            nextChallengeHasher.update(buffU);
+        }
+
+        fdTo.pos = oldPos;
+    }
+
+    // Convert contriution key from JSON format
+    function deserialiseKey(key) {
+        let newKey = {
+            alpha: {},
+            beta: {},
+            tau: {}
+        };
+
+        newKey.alpha.g1_s = hex2ByteArray(key.alpha.g1_s);
+        newKey.alpha.g1_sx = hex2ByteArray(key.alpha.g1_sx);
+        newKey.alpha.g2_spx = hex2ByteArray(key.alpha.g2_spx);
+        newKey.beta.g1_s = hex2ByteArray(key.beta.g1_s);
+        newKey.beta.g1_sx = hex2ByteArray(key.beta.g1_sx);
+        newKey.beta.g2_spx = hex2ByteArray(key.beta.g2_spx);
+        newKey.tau.g1_s = hex2ByteArray(key.tau.g1_s);
+        newKey.tau.g1_sx = hex2ByteArray(key.tau.g1_sx);
+        newKey.tau.g2_spx = hex2ByteArray(key.tau.g2_spx);
+
+        return newKey;
+    }
+
+}
+
+/*
+    Copyright 2018 0KIMS association.
+
+    This file is part of snarkJS.
+
+    snarkJS is a free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    snarkJS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+    License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+async function importPrepared( contributionFilename, newPTauFilename, power, logger) {
+
+    await Blake2b__default["default"].ready();
+
+    const noHash = new Uint8Array(64);
+    for (let i=0; i<64; i++) noHash[i] = 0xFF;
+
+    let curve = await getCurveFromName("BN254");
+
+    const sG1 = curve.F1.n8*2;
+    curve.F1.n8; // Compressed size
+    const sG2 = curve.F2.n8*2;
+    curve.F2.n8; // Compressed size
+
+    const fdResponse = await fastFile__namespace.readExisting(contributionFilename);
+
+    if  (fdResponse.totalSize !=
+        //64 +                            // Old Hash
+        sG1 +              // alpha G1
+        sG1 +              // beta G1
+        sG2 +              // Beta G2
+        (2 ** power)*sG1 +
+        (2 ** power)*sG2 +
+        (2 ** power)*sG1 +
+        (2 ** power)*sG1               // Beta coeffs G1
+    )
+        throw new Error("Size of the contribution is invalid");
+
+    let currentContribution = {};
+
+    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 10);
+    await writePTauHeader(fdNew, curve, power);
+
+    const contributionPreviousHash = noHash; //await fdResponse.read(64);
+    const hasherResponse = new Blake2b__default["default"](64);
+    hasherResponse.update(contributionPreviousHash);
+
+
+    const startSections = [];
+    let res;
+    res = await processSection(fdResponse, fdNew, "G1", 4, 1, [0], "alphaG1");
+    res = await processSection(fdResponse, fdNew, "G1", 5, 1, [0], "betaG1");
+    res = await processSection(fdResponse, fdNew, "G2", 6, 1, [0], "betaG2");
+    currentContribution.betaG2 = res[0];
+    res = await processSection(fdResponse, fdNew, "G1", 12, (2 ** power), [0], "tauG1");
+    currentContribution.tauG1 = res[0];
+    res = await processSection(fdResponse, fdNew, "G2", 13, (2 ** power), [0], "tauG2");
+    currentContribution.tauG2 = res[0];
+    res = await processSection(fdResponse, fdNew, "G1", 14, (2 ** power), [0], "alphaG1");
+    currentContribution.alphaG1 = res[0];
+    res = await processSection(fdResponse, fdNew, "G1", 15, (2 ** power), [0], "betaG1");
+    currentContribution.betaG1 = res[0];
+
+    currentContribution.partialHash = hasherResponse.getPartialHash();
+
+
+    const buffKey = new Uint8Array(curve.F1.n8*2*6+curve.F2.n8*2*3); //await fdResponse.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
+
+    currentContribution.key = fromPtauPubKeyRpr(buffKey, 0, curve, false);
+
+    //hasherResponse.update(new Uint8Array(buffKey));
+    const hashResponse = hasherResponse.digest();
+
+    if (logger) logger.info(formatHash(hashResponse, "Contribution Response Hash imported: "));
+
+    const nextChallengeHasher = new Blake2b__default["default"](64);
+    nextChallengeHasher.update(hashResponse);
+
+    await hashSection(nextChallengeHasher, fdNew, "G1", 12, (2 ** power) , "tauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G2", 13, (2 ** power) , "tauG2", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 14, (2 ** power) , "alphaTauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 15, (2 ** power) , "betaTauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1             , "betaG2", logger);
+
+    currentContribution.nextChallenge = nextChallengeHasher.digest();
+
+    if (logger) logger.info(formatHash(currentContribution.nextChallenge, "Next Challenge Hash: "));
+    const contributions = [];
+
+    await writeContributions(fdNew, curve, contributions);
+
+    await fdResponse.close();
+    await fdNew.close();
+
+    return currentContribution.nextChallenge;
+
+    async function processSection(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName) {
+        return await processSectionImportPoints(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName);
+    }
+
+    async function processSectionImportPoints(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName) {
+
+        const G = curve[groupName];
+        //const scG = G.F.n8;
+        const sG = G.F.n8*2;
+
+        const singularPoints = [];
+
+        await binFileUtils__namespace.startWriteSection(fdTo, sectionId);
+        const nPointsChunk = Math.floor((1<<24)/sG);
+
+        startSections[sectionId] = fdTo.pos;
+
+        for (let i=0; i< nPoints; i += nPointsChunk) {
+            if (logger) logger.debug(`Importing ${sectionName}: ${i}/${nPoints}`);
+            const n = Math.min(nPoints-i, nPointsChunk);
+
+            const buffC = await fdFrom.read(n * sG);
+            //hasherResponse.update(buffC);
+
+            const buffLEM = await G.batchUtoLEM(buffC);
+
+            await fdTo.write(buffLEM);
+            for (let j=0; j<singularPointIndexes.length; j++) {
+                const sp = singularPointIndexes[j];
+                if ((sp >=i) && (sp < i+n)) {
+                    const P = G.fromRprLEM(buffLEM, (sp-i)*sG);
+                    singularPoints.push(P);
+                }
+            }
+        }
+
+        await binFileUtils__namespace.endWriteSection(fdTo);
+
+        return singularPoints;
+    }
 
     async function hashSection(nextChallengeHasher, fdTo, groupName, sectionId, nPoints, sectionName, logger) {
 
@@ -1694,79 +1927,90 @@ async function verify(tauFilename, logger) {
     // await test();
 
     // Verify Section tau*G1
-    if (logger) logger.debug("Verifying powers in tau*G1 section");
-    const rTau1 = await processSection(2, "G1", "tauG1", (2 ** power)*2-1, [0, 1], logger);
-    sr = await sameRatio$1(curve, rTau1.R1, rTau1.R2, curve.G2.g, curContr.tauG2);
-    if (sr !== true) {
-        if (logger) logger.error("tauG1 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G1.eq(curve.G1.g, rTau1.singularPoints[0])) {
-        if (logger) logger.error("First element of tau*G1 section must be the generator");
-        return false;
-    }
-    if (!curve.G1.eq(curContr.tauG1, rTau1.singularPoints[1])) {
-        if (logger) logger.error("Second element of tau*G1 section does not match the one in the contribution section");
-        return false;
+
+    if (sections[2]) {
+        if (logger) logger.debug("Verifying powers in tau*G1 section");
+        const rTau1 = await processSection(2, "G1", "tauG1", (2 ** power)*2-1, [0, 1], logger);
+        sr = await sameRatio$1(curve, rTau1.R1, rTau1.R2, curve.G2.g, curContr.tauG2);
+        if (sr !== true) {
+            if (logger) logger.error("tauG1 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G1.eq(curve.G1.g, rTau1.singularPoints[0])) {
+            if (logger) logger.error("First element of tau*G1 section must be the generator");
+            return false;
+        }
+        if (!curve.G1.eq(curContr.tauG1, rTau1.singularPoints[1])) {
+            if (logger) logger.error("Second element of tau*G1 section does not match the one in the contribution section");
+            return false;
+        }
     }
 
     // await test();
 
-    // Verify Section tau*G2
-    if (logger) logger.debug("Verifying powers in tau*G2 section");
-    const rTau2 = await processSection(3, "G2", "tauG2", 2 ** power, [0, 1],  logger);
-    sr = await sameRatio$1(curve, curve.G1.g, curContr.tauG1, rTau2.R1, rTau2.R2);
-    if (sr !== true) {
-        if (logger) logger.error("tauG2 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G2.eq(curve.G2.g, rTau2.singularPoints[0])) {
-        if (logger) logger.error("First element of tau*G2 section must be the generator");
-        return false;
-    }
-    if (!curve.G2.eq(curContr.tauG2, rTau2.singularPoints[1])) {
-        if (logger) logger.error("Second element of tau*G2 section does not match the one in the contribution section");
-        return false;
+    if (sections[3]) {
+        // Verify Section tau*G2
+        if (logger) logger.debug("Verifying powers in tau*G2 section");
+        const rTau2 = await processSection(3, "G2", "tauG2", 2 ** power, [0, 1],  logger);
+        sr = await sameRatio$1(curve, curve.G1.g, curContr.tauG1, rTau2.R1, rTau2.R2);
+        if (sr !== true) {
+            if (logger) logger.error("tauG2 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G2.eq(curve.G2.g, rTau2.singularPoints[0])) {
+            if (logger) logger.error("First element of tau*G2 section must be the generator");
+            return false;
+        }
+        if (!curve.G2.eq(curContr.tauG2, rTau2.singularPoints[1])) {
+            if (logger) logger.error("Second element of tau*G2 section does not match the one in the contribution section");
+            return false;
+        }
     }
 
     // Verify Section alpha*tau*G1
-    if (logger) logger.debug("Verifying powers in alpha*tau*G1 section");
-    const rAlphaTauG1 = await processSection(4, "G1", "alphatauG1", 2 ** power, [0], logger);
-    sr = await sameRatio$1(curve, rAlphaTauG1.R1, rAlphaTauG1.R2, curve.G2.g, curContr.tauG2);
-    if (sr !== true) {
-        if (logger) logger.error("alphaTauG1 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G1.eq(curContr.alphaG1, rAlphaTauG1.singularPoints[0])) {
-        if (logger) logger.error("First element of alpha*tau*G1 section (alpha*G1) does not match the one in the contribution section");
-        return false;
+    if (sections[4]) {
+        if (logger) logger.debug("Verifying powers in alpha*tau*G1 section");
+        const rAlphaTauG1 = await processSection(4, "G1", "alphatauG1", 2 ** power, [0], logger);
+        sr = await sameRatio$1(curve, rAlphaTauG1.R1, rAlphaTauG1.R2, curve.G2.g, curContr.tauG2);
+        if (sr !== true) {
+            if (logger) logger.error("alphaTauG1 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G1.eq(curContr.alphaG1, rAlphaTauG1.singularPoints[0])) {
+            if (logger) logger.error("First element of alpha*tau*G1 section (alpha*G1) does not match the one in the contribution section");
+            return false;
+        }
     }
 
     // Verify Section beta*tau*G1
-    if (logger) logger.debug("Verifying powers in beta*tau*G1 section");
-    const rBetaTauG1 = await processSection(5, "G1", "betatauG1", 2 ** power, [0], logger);
-    sr = await sameRatio$1(curve, rBetaTauG1.R1, rBetaTauG1.R2, curve.G2.g, curContr.tauG2);
-    if (sr !== true) {
-        if (logger) logger.error("betaTauG1 section. Powers do not match");
-        return false;
-    }
-    if (!curve.G1.eq(curContr.betaG1, rBetaTauG1.singularPoints[0])) {
-        if (logger) logger.error("First element of beta*tau*G1 section (beta*G1) does not match the one in the contribution section");
-        return false;
+    if (sections[5]) {
+        if (logger) logger.debug("Verifying powers in beta*tau*G1 section");
+        const rBetaTauG1 = await processSection(5, "G1", "betatauG1", 2 ** power, [0], logger);
+        sr = await sameRatio$1(curve, rBetaTauG1.R1, rBetaTauG1.R2, curve.G2.g, curContr.tauG2);
+        if (sr !== true) {
+            if (logger) logger.error("betaTauG1 section. Powers do not match");
+            return false;
+        }
+        if (!curve.G1.eq(curContr.betaG1, rBetaTauG1.singularPoints[0])) {
+            if (logger) logger.error("First element of beta*tau*G1 section (beta*G1) does not match the one in the contribution section");
+            return false;
+        }
     }
 
     //Verify Beta G2
-    const betaG2 = await processSectionBetaG2(logger);
-    if (!curve.G2.eq(curContr.betaG2, betaG2)) {
-        if (logger) logger.error("betaG2 element in betaG2 section does not match the one in the contribution section");
-        return false;
+    if (sections[6]) {
+        const betaG2 = await processSectionBetaG2(logger);
+        if (!curve.G2.eq(curContr.betaG2, betaG2)) {
+            if (logger) logger.error("betaG2 element in betaG2 section does not match the one in the contribution section");
+            return false;
+        }
     }
 
 
     const nextContributionHash = nextContributionHasher.digest();
 
     // Check the nextChallengeHash
-    if (power == ceremonyPower) {
+    if (power == ceremonyPower && sections[2]) {
         if (!hashIsEqual(nextContributionHash,curContr.nextChallenge)) {
             if (logger) logger.error("Hash of the values does not match the next challenge of the last contributor in the contributions section");
             return false;
@@ -1846,8 +2090,8 @@ async function verify(tauFilename, logger) {
             throw new Error("File has no BetaG2 section");
         }
         if (sections[6].length>1) {
-            logger.error("File has no BetaG2 section");
-            throw new Error("File has more than one GetaG2 section");
+            logger.error("File has more than 1 BetaG2 section");
+            throw new Error("File has more than one BetaG2 section");
         }
         fd.pos = sections[6][0].p;
 
@@ -2007,7 +2251,7 @@ async function verify(tauFilename, logger) {
             const resLagrange = await G.multiExpAffine(buffG, buff_r, logger, sectionName + "_" + p + "_transformed");
 
             if (!G.eq(resTau, resLagrange)) {
-                if (logger) logger.error("Phase2 caclutation does not match with powers of tau");
+                if (logger) logger.error("Phase2 calculation does not match with powers of tau");
                 return false;
             }
 
@@ -2212,7 +2456,7 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
         return false;
     }
     if (beaconHash.length>=256) {
-        if (logger) logger.error("Maximum lenght of beacon hash is 255 bytes");
+        if (logger) logger.error("Maximum length of beacon hash is 255 bytes");
         return false;
     }
 
@@ -2977,6 +3221,53 @@ async function exportJson(pTauFilename, verbose) {
     }
 
 
+}
+
+/*
+    Copyright 2018 0KIMS association.
+
+    This file is part of snarkJS.
+
+    snarkJS is a free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    snarkJS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+    License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+/* 
+    Reverse phase2 prepared file
+*/
+async function unpreparePhase2(oldPtauFilename, newPTauFilename, logger) {
+
+    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+    const {curve, power} = await readPTauHeader(fdOld, sections);
+
+    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 7);
+    await writePTauHeader(fdNew, curve, power);
+
+    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 2);
+    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 3);
+    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 4);
+    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 5);
+    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 6);
+    await binFileUtils__namespace.copySection(fdOld, sections, fdNew, 7);
+
+    await fdOld.close();
+    await fdNew.close();
+
+    if (logger) {
+        logger.info("Done");
+    }
+
+    return;
 }
 
 /*
@@ -12433,11 +12724,18 @@ const commands = [
         action: powersOfTauChallengeContribute
     },
     {
-        cmd: "powersoftau import response <powersoftau_old.ptau> <response> <<powersoftau_new.ptau>",
+        cmd: "powersoftau import response <powersoftau_old.ptau> <response> <powersoftau_new.ptau>",
         description: "import a response to a ptau file",
         alias: ["ptir"],
         options: "-verbose|v -nopoints -nocheck -name|n",
         action: powersOfTauImport
+    },
+    {
+        cmd: "powersoftau import prepared <prepared> <powersoftau_new.ptau> <powers>",
+        description: "convert a prepared Bellman file to a ptau file",
+        alias: ["ptip"],
+        options: "-verbose|v ",
+        action: powersOfTauImportPrepared
     },
     {
         cmd: "powersoftau beacon <old_powersoftau.ptau> <new_powersoftau.ptau> <beaconHash(Hex)> <numIterationsExp>",
@@ -12449,10 +12747,18 @@ const commands = [
     {
         cmd: "powersoftau prepare phase2 <powersoftau.ptau> <new_powersoftau.ptau>",
         description: "Prepares phase 2. ",
-        longDescription: " This process calculates the evaluation of the Lagrange polinomials at tau for alpha*tau and beta tau",
+        longDescription: " This process calculates the evaluation of the Lagrange polynomials at tau for alpha*tau and beta tau",
         alias: ["pt2"],
         options: "-verbose|v",
         action: powersOfTauPreparePhase2
+    },
+    {
+        cmd: "powersoftau unprepare <powersoftau.ptau> <new_powersoftau.ptau>",
+        description: "Converts prepared file to previous state",
+        longDescription: " This process removes the phase 2 sections",
+        alias: ["ptu"],
+        options: "-verbose|v",
+        action: powersOfTauUnprepare
     },
     {
         cmd: "powersoftau convert <old_powersoftau.ptau> <new_powersoftau.ptau>",
@@ -13105,6 +13411,23 @@ async function powersOfTauImport(params, options) {
     // TODO Verify
 }
 
+async function powersOfTauImportPrepared(params, options) {
+    let response;
+    let newPtauName;
+    let power;
+
+    response = params[0];
+    newPtauName = params[1];
+    power = params[2];
+
+    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+
+    const res = await importPrepared(response, newPtauName, power, logger);
+
+    if (res) return res;
+    return;
+}
+
 async function powersOfTauVerify(params, options) {
     let ptauName;
 
@@ -13158,6 +13481,18 @@ async function powersOfTauPreparePhase2(params, options) {
     if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
 
     return await preparePhase2(oldPtauName, newPtauName, logger);
+}
+
+async function powersOfTauUnprepare(params, options) {
+    let oldPtauName;
+    let newPtauName;
+
+    oldPtauName = params[0];
+    newPtauName = params[1];
+
+    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+
+    return await unpreparePhase2(oldPtauName, newPtauName, logger);
 }
 
 async function powersOfTauConvert(params, options) {

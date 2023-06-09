@@ -29,3 +29,4 @@ export {default as preparePhase2} from "./powersoftau_preparephase2.js";
 export {default as truncate} from "./powersoftau_truncate.js";
 export {default as convert} from "./powersoftau_convert.js";
 export {default as exportJson} from "./powersoftau_export_json.js";
+export {default as unprepare} from "./powersoftau_unprepare.js";

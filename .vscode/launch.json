@@ -11,8 +11,8 @@
             "powersoftau",
             "export",
             "json",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot-nopoints_0006.ptau",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_contribs_0006.json"
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot28\\pot28_0058_nopoints.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot28\\pot28_contribs_0058.json"
         ],
         "request": "launch",
         "skipFiles": [
@@ -60,7 +60,7 @@
         "args": [
             "powersoftau",
             "verify",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\converted_0.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\test1\\pot15_0002_test.ptau",
             "-v"
         ],
         "request": "launch",

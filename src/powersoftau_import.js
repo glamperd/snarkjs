@@ -89,7 +89,8 @@ export default async function importResponse(oldPtauFilename, contributionFilena
     if (contributions.length>0) {
         lastChallengeHash = contributions[contributions.length-1].nextChallenge;
     } else {
-        lastChallengeHash = utils.calculateFirstChallengeHash(curve, power, logger);
+        // Temporary disable if no contrib history in json
+        //lastChallengeHash = utils.calculateFirstChallengeHash(curve, power, logger);
     }
 
     const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, importPoints ? 7: 2);
@@ -97,12 +98,12 @@ export default async function importResponse(oldPtauFilename, contributionFilena
 
     const contributionPreviousHash = await fdResponse.read(64);
 
-    if (misc.hashIsEqual(noHash,lastChallengeHash)) {
+    if (lastChallengeHash && misc.hashIsEqual(noHash,lastChallengeHash)) {
         lastChallengeHash = contributionPreviousHash;
         contributions[contributions.length-1].nextChallenge = lastChallengeHash;
     }
 
-    if(!misc.hashIsEqual(contributionPreviousHash,lastChallengeHash)) {
+    if(lastChallengeHash && !misc.hashIsEqual(contributionPreviousHash,lastChallengeHash)) {
         if (logger) {
             //logger.info("prev hash " + contributionPreviousHash.toString());
             logger.info(misc.formatHash(contributionPreviousHash, "Prev hash"));

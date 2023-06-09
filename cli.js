@@ -111,6 +111,14 @@ const commands = [
         action: powersOfTauPreparePhase2
     },
     {
+        cmd: "powersoftau unprepare <powersoftau.ptau> <new_powersoftau.ptau>",
+        description: "Converts prepared file to previous state",
+        longDescription: " This process removes the phase 2 sections",
+        alias: ["ptu"],
+        options: "-verbose|v",
+        action: powersOfTauUnprepare
+    },
+    {
         cmd: "powersoftau convert <old_powersoftau.ptau> <new_powersoftau.ptau>",
         description: "Convert ptau",
         longDescription: " This process calculates the evaluation of the Lagrange polynomials at tau for alpha*tau and beta tau",
@@ -831,6 +839,18 @@ async function powersOfTauPreparePhase2(params, options) {
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
     return await powersOfTau.preparePhase2(oldPtauName, newPtauName, logger);
+}
+
+async function powersOfTauUnprepare(params, options) {
+    let oldPtauName;
+    let newPtauName;
+
+    oldPtauName = params[0];
+    newPtauName = params[1];
+
+    if (options.verbose) Logger.setLogLevel("DEBUG");
+
+    return await powersOfTau.unprepare(oldPtauName, newPtauName, logger);
 }
 
 async function powersOfTauConvert(params, options) {

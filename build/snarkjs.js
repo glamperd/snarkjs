@@ -15195,7 +15195,7 @@ var snarkjs = (function (exports) {
             const bits = log2$1(nPoints);
 
             if ((2 ** bits)*sIn != buff.byteLength) {
-                if (logger) logger.error("lagrangeEvaluations iinvalid input size");
+                if (logger) logger.error("lagrangeEvaluations invalid input size");
                 throw new Error("lagrangeEvaluations invalid Input size");
             }
 
