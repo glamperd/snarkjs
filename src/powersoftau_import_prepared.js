@@ -195,7 +195,7 @@ export default async function importPrepared( contributionFilename, newPTauFilen
         return u8;
     }
 
-    // Convert contriution key from JSON format
+    // Convert contribution key from JSON format
     function deserialiseKey(key) {
         let newKey = {
             alpha: {},
