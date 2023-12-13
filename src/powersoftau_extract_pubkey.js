@@ -15,6 +15,11 @@
 
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+
+    ---------------
+
+    Extract pubkey from a Bellman-format challenge file and 
+    write it to a json file.
 */
 
 import * as fastFile from "fastfile";
@@ -23,10 +28,9 @@ import * as utils from "./powersoftau_utils.js";
 import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
 import { getCurveFromName } from "./curves.js";
-import * as fs from 'fs';
-import { Scalar, utils as ffUtils } from "ffjavascript";
+import * as fs from "node:fs";
 
-export default async function importPrepared( contributionFilename, newPTauFilename, power, logger) {
+export default async function extractPubkey( contributionFilename, jsonFilename, power, logger) {
 
     await Blake2b.ready();
 
@@ -36,14 +40,12 @@ export default async function importPrepared( contributionFilename, newPTauFilen
     let curve = await getCurveFromName("BN254");
 
     const sG1 = curve.F1.n8*2;
-    const scG1 = curve.F1.n8; // Compressed size
     const sG2 = curve.F2.n8*2;
-    const scG2 = curve.F2.n8; // Compressed size
 
     const fdResponse = await fastFile.readExisting(contributionFilename);
 
     if  (fdResponse.totalSize !=
-        //64 +                            // Old Hash
+        64 +               // Old Hash
         sG1 +              // alpha G1
         sG1 +              // beta G1
         sG2 +              // Beta G2
@@ -56,27 +58,23 @@ export default async function importPrepared( contributionFilename, newPTauFilen
 
     let currentContribution = {};
 
-    const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 10);
-    await utils.writePTauHeader(fdNew, curve, power);
-
-    const contributionPreviousHash = noHash; //await fdResponse.read(64);
+    const contributionPreviousHash = await fdResponse.read(64);
     const hasherResponse = new Blake2b(64);
     hasherResponse.update(contributionPreviousHash);
 
-
     const startSections = [];
     let res;
-    res = await processSection(fdResponse, fdNew, "G1", 4, 1, [0], "alphaG1");
-    res = await processSection(fdResponse, fdNew, "G1", 5, 1, [0], "betaG1");
-    res = await processSection(fdResponse, fdNew, "G2", 6, 1, [0], "betaG2");
+    res = await processSection(fdResponse, "G1", 1, [0], "alphaG1");
+    res = await processSection(fdResponse, "G1", 1, [0], "betaG1");
+    res = await processSection(fdResponse, "G2", 1, [0], "betaG2");
     currentContribution.betaG2 = res[0];
-    res = await processSection(fdResponse, fdNew, "G1", 12, (2 ** power), [0], "tauG1");
+    res = await processSection(fdResponse, "G1", (2 ** power), [0], "tauG1");
     currentContribution.tauG1 = res[0];
-    res = await processSection(fdResponse, fdNew, "G2", 13, (2 ** power), [0], "tauG2");
+    res = await processSection(fdResponse, "G2", (2 ** power), [0], "tauG2");
     currentContribution.tauG2 = res[0];
-    res = await processSection(fdResponse, fdNew, "G1", 14, (2 ** power), [0], "alphaG1");
+    res = await processSection(fdResponse, "G1", (2 ** power), [0], "alphaG1");
     currentContribution.alphaG1 = res[0];
-    res = await processSection(fdResponse, fdNew, "G1", 15, (2 ** power), [0], "betaG1");
+    res = await processSection(fdResponse, "G1", (2 ** power), [0], "betaG1");
     currentContribution.betaG1 = res[0];
 
     currentContribution.partialHash = hasherResponse.getPartialHash();
@@ -94,29 +92,30 @@ export default async function importPrepared( contributionFilename, newPTauFilen
     const nextChallengeHasher = new Blake2b(64);
     nextChallengeHasher.update(hashResponse);
 
-    await hashSection(nextChallengeHasher, fdNew, "G1", 12, (2 ** power) , "tauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G2", 13, (2 ** power) , "tauG2", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G1", 14, (2 ** power) , "alphaTauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G1", 15, (2 ** power) , "betaTauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1             , "betaG2", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 12, (2 ** power) , "tauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G2", 13, (2 ** power) , "tauG2", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 14, (2 ** power) , "alphaTauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 15, (2 ** power) , "betaTauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1             , "betaG2", logger);
 
     currentContribution.nextChallenge = nextChallengeHasher.digest();
 
     if (logger) logger.info(misc.formatHash(currentContribution.nextChallenge, "Next Challenge Hash: "));
-    const contributions = [];
+    //const contributions = [];
 
-    await utils.writeContributions(fdNew, curve, contributions);
+    //await utils.writeContributions(fdNew, curve, contributions);
+    const json = JSON.stringify(currentContribution);
+    fs.writeFileSync(jsonFilename, json);
 
     await fdResponse.close();
-    await fdNew.close();
 
     return currentContribution.nextChallenge;
 
-    async function processSection(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName) {
-        return await processSectionImportPoints(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName);
+    async function processSection(fdFrom, groupName, nPoints, singularPointIndexes, sectionName) {
+        return await processSectionImportPoints(fdFrom, groupName, nPoints, singularPointIndexes, sectionName);
     }
 
-    async function processSectionImportPoints(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName) {
+    async function processSectionImportPoints(fdFrom, groupName, nPoints, singularPointIndexes, sectionName) {
 
         const G = curve[groupName];
         //const scG = G.F.n8;
@@ -124,10 +123,7 @@ export default async function importPrepared( contributionFilename, newPTauFilen
 
         const singularPoints = [];
 
-        await binFileUtils.startWriteSection(fdTo, sectionId);
         const nPointsChunk = Math.floor((1<<24)/sG);
-
-        startSections[sectionId] = fdTo.pos;
 
         for (let i=0; i< nPoints; i += nPointsChunk) {
             if (logger) logger.debug(`Importing ${sectionName}: ${i}/${nPoints}`);
@@ -138,7 +134,6 @@ export default async function importPrepared( contributionFilename, newPTauFilen
 
             const buffLEM = await G.batchUtoLEM(buffC);
 
-            await fdTo.write(buffLEM);
             for (let j=0; j<singularPointIndexes.length; j++) {
                 const sp = singularPointIndexes[j];
                 if ((sp >=i) && (sp < i+n)) {
@@ -147,8 +142,6 @@ export default async function importPrepared( contributionFilename, newPTauFilen
                 }
             }
         }
-
-        await binFileUtils.endWriteSection(fdTo);
 
         return singularPoints;
     }

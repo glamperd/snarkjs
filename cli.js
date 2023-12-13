@@ -149,6 +149,13 @@ const commands = [
         action: powersOfTauExportJson
     },
     {
+        cmd: "powersoftau extract pubkey <challenge_file> <pubkey.json>",
+        description: "Extracts the pubkey from a challenge file to a JSON",
+        alias: ["ptep"],
+        options: "-verbose|v",
+        action: powersOfTauExtractPubkey
+    },
+    {
         cmd: "r1cs info [circuit.r1cs]",
         description: "Print statistics of a circuit",
         alias: ["ri", "info -r|r1cs:circuit.r1cs"],
@@ -894,6 +901,24 @@ async function powersOfTauExportJson(params, options) {
     const pTauJson = await powersOfTau.exportJson(ptauName, logger);
 
     await bfj.write(jsonName, pTauJson, {space: 1});
+}
+
+
+async function powersOfTauExtractPubkey(params, options) {
+    let response;
+    let newJsonName;
+    let power;
+
+    response = params[0];
+    newJsonName = params[1];
+    power = params[2];
+
+    if (options.verbose) Logger.setLogLevel("DEBUG");
+
+    const res = await powersOfTau.extractPubkey(response, newJsonName, power, logger);
+
+    if (res) return res;
+    return;
 }
 
 
