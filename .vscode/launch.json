@@ -55,6 +55,23 @@
         "type": "node"
     },
     {
+        "name": "pot extract pubkey",
+        "program": "${workspaceFolder}/build/cli.cjs",
+        "args": [
+            "powersoftau",
+            "extract",
+            "pubkey",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\beacon_0005",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\beacon_pubkey.json",
+            "10"
+        ],
+        "request": "launch",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "node"
+    },
+    {
         "name": "pot verify",
         "program": "${workspaceFolder}/build/cli.cjs",
         "args": [

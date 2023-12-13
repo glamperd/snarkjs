@@ -32,6 +32,7 @@ import * as fs from "node:fs";
 
 export default async function extractPubkey( contributionFilename, jsonFilename, power, logger) {
 
+    const pow = Number(power);
     await Blake2b.ready();
 
     const noHash = new Uint8Array(64);
@@ -39,21 +40,21 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
 
     let curve = await getCurveFromName("BN254");
 
-    const sG1 = curve.F1.n8*2;
-    const sG2 = curve.F2.n8*2;
+    const sG1 = curve.F1.n8;
+    const sG2 = curve.F2.n8;
 
     const fdResponse = await fastFile.readExisting(contributionFilename);
 
-    if  (fdResponse.totalSize !=
-        64 +               // Old Hash
+    const expectedSize =         64 +               // Old Hash
+        768 +              // pubkey
         sG1 +              // alpha G1
         sG1 +              // beta G1
-        sG2 +              // Beta G2
-        (2 ** power)*sG1 +
-        (2 ** power)*sG2 +
-        (2 ** power)*sG1 +
-        (2 ** power)*sG1               // Beta coeffs G1
-    )
+        ((2 ** (pow+1)) - 1)*sG1 +
+        (2 ** pow)*sG2 +
+        (2 ** pow)*sG1 +
+        (2 ** pow)*sG1;               // Beta coeffs G1
+
+    if  (fdResponse.totalSize != expectedSize)
         throw new Error("Size of the contribution is invalid");
 
     let currentContribution = {};
@@ -68,7 +69,7 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
     res = await processSection(fdResponse, "G1", 1, [0], "betaG1");
     res = await processSection(fdResponse, "G2", 1, [0], "betaG2");
     currentContribution.betaG2 = res[0];
-    res = await processSection(fdResponse, "G1", (2 ** power), [0], "tauG1");
+    res = await processSection(fdResponse, "G1", (2 ** (pow+1) - 1), [0], "tauG1");
     currentContribution.tauG1 = res[0];
     res = await processSection(fdResponse, "G2", (2 ** power), [0], "tauG2");
     currentContribution.tauG2 = res[0];
@@ -119,7 +120,7 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
 
         const G = curve[groupName];
         //const scG = G.F.n8;
-        const sG = G.F.n8*2;
+        const sG = G.F.n8; //compressed
 
         const singularPoints = [];
 
@@ -132,7 +133,7 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
             const buffC = await fdFrom.read(n * sG);
             //hasherResponse.update(buffC);
 
-            const buffLEM = await G.batchUtoLEM(buffC);
+            const buffLEM = await G.batchCtoLEM(buffC);
 
             for (let j=0; j<singularPointIndexes.length; j++) {
                 const sp = singularPointIndexes[j];

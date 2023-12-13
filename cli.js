@@ -149,7 +149,7 @@ const commands = [
         action: powersOfTauExportJson
     },
     {
-        cmd: "powersoftau extract pubkey <challenge_file> <pubkey.json>",
+        cmd: "powersoftau extract pubkey <challenge_file> <pubkey.json> <powers>",
         description: "Extracts the pubkey from a challenge file to a JSON",
         alias: ["ptep"],
         options: "-verbose|v",
