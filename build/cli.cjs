@@ -12,6 +12,7 @@ var readline = require('readline');
 var crypto = require('crypto');
 var path = require('path');
 var binFileUtils = require('@iden3/binfileutils');
+var fs$1 = require('node:fs');
 var ejs = require('ejs');
 var bfj = require('bfj');
 var jsSha3 = require('js-sha3');
@@ -47,6 +48,7 @@ var readline__default = /*#__PURE__*/_interopDefaultLegacy(readline);
 var crypto__default = /*#__PURE__*/_interopDefaultLegacy(crypto);
 var path__default = /*#__PURE__*/_interopDefaultLegacy(path);
 var binFileUtils__namespace = /*#__PURE__*/_interopNamespace(binFileUtils);
+var fs__namespace$1 = /*#__PURE__*/_interopNamespace(fs$1);
 var ejs__default = /*#__PURE__*/_interopDefaultLegacy(ejs);
 var bfj__default = /*#__PURE__*/_interopDefaultLegacy(bfj);
 var jsSha3__default = /*#__PURE__*/_interopDefaultLegacy(jsSha3);
@@ -1662,8 +1664,8 @@ async function importPrepared( contributionFilename, newPTauFilename, power, log
 
     currentContribution.partialHash = hasherResponse.getPartialHash();
 
-
-    const buffKey = new Uint8Array(curve.F1.n8*2*6+curve.F2.n8*2*3); //await fdResponse.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
+    //const buffKey = new Uint8Array(curve.F1.n8*2*6+curve.F2.n8*2*3);
+    const buffKey = await fdResponse.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
 
     currentContribution.key = fromPtauPubKeyRpr(buffKey, 0, curve, false);
 
@@ -3268,6 +3270,152 @@ async function unpreparePhase2(oldPtauFilename, newPTauFilename, logger) {
     }
 
     return;
+}
+
+/*
+    Copyright 2018 0KIMS association.
+
+    This file is part of snarkJS.
+
+    snarkJS is a free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    snarkJS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+    License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+
+    ---------------
+
+    Extract pubkey from a Bellman-format challenge file and 
+    write it to a json file.
+*/
+
+async function extractPubkey( contributionFilename, jsonFilename, power, logger) {
+
+    const pow = Number(power);
+    await Blake2b__default["default"].ready();
+
+    const noHash = new Uint8Array(64);
+    for (let i=0; i<64; i++) noHash[i] = 0xFF;
+
+    let curve = await getCurveFromName("BN254");
+
+    const sG1 = curve.F1.n8;
+    const sG2 = curve.F2.n8;
+
+    const fdResponse = await fastFile__namespace.readExisting(contributionFilename);
+
+    const expectedSize =         64 +               // Old Hash
+        768 +              // pubkey
+        sG2 +              // beta G2
+        ((2 ** (pow+1)) - 1)*sG1 +
+        (2 ** pow)*sG2 +
+        (2 ** pow)*sG1 +
+        (2 ** pow)*sG1;               // Beta coeffs G1
+
+    if  (fdResponse.totalSize != expectedSize)
+        throw new Error("Size of the contribution is invalid");
+
+    let currentContribution = {};
+
+    const contributionPreviousHash = await fdResponse.read(64);
+    const hasherResponse = new Blake2b__default["default"](64);
+    hasherResponse.update(contributionPreviousHash);
+    let res;
+    res = await processSection(fdResponse, "G1", (2 ** (pow+1) - 1), [0], "tauG1");
+    currentContribution.tauG1 = res[0];
+    res = await processSection(fdResponse, "G2", (2 ** power), [0], "tauG2");
+    currentContribution.tauG2 = res[0];
+    res = await processSection(fdResponse, "G1", (2 ** power), [0], "alphaG1");
+    currentContribution.alphaG1 = res[0];
+    res = await processSection(fdResponse, "G1", (2 ** power), [0], "betaG1");
+    currentContribution.betaG1 = res[0];
+    res = await processSection(fdResponse, "G2", 1, [0], "betaG2");
+    currentContribution.betaG2 = res[0];
+
+    currentContribution.partialHash = hasherResponse.getPartialHash();
+
+    //const buffKey = new Uint8Array(curve.F1.n8*2*6+curve.F2.n8*2*3);
+    const buffKey = await fdResponse.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
+
+    currentContribution.key = fromPtauPubKeyRpr(buffKey, 0, curve, false);
+
+    //hasherResponse.update(new Uint8Array(buffKey));
+    const hashResponse = hasherResponse.digest();
+
+    if (logger) logger.info(formatHash(hashResponse, "Contribution Response Hash imported: "));
+
+    const nextChallengeHasher = new Blake2b__default["default"](64);
+    nextChallengeHasher.update(hashResponse);
+
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 12, (2 ** power) , "tauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G2", 13, (2 ** power) , "tauG2", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 14, (2 ** power) , "alphaTauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G1", 15, (2 ** power) , "betaTauG1", logger);
+    // await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1             , "betaG2", logger);
+
+    currentContribution.nextChallenge = nextChallengeHasher.digest();
+
+    if (logger) logger.info(formatHash(currentContribution.nextChallenge, "Next Challenge Hash: "));
+    //const contributions = [];
+
+    //await utils.writeContributions(fdNew, curve, contributions);
+    let pubkey = {
+        tauG1: byteArray2hex(currentContribution.tauG1),
+        tauG2: byteArray2hex(currentContribution.tauG2),
+        alphaG1: byteArray2hex(currentContribution.alphaG1),
+        betaG1: byteArray2hex(currentContribution.betaG1),
+        betaG2: byteArray2hex(currentContribution.betaG2),
+        key: currentContribution.key
+    };
+    const json = JSON.stringify(pubkey);
+    fs__namespace$1.writeFileSync(jsonFilename, json);
+
+    await fdResponse.close();
+
+    return currentContribution.nextChallenge;
+
+    async function processSection(fdFrom, groupName, nPoints, singularPointIndexes, sectionName) {
+        return await processSectionImportPoints(fdFrom, groupName, nPoints, singularPointIndexes, sectionName);
+    }
+
+    async function processSectionImportPoints(fdFrom, groupName, nPoints, singularPointIndexes, sectionName) {
+
+        const G = curve[groupName];
+        //const scG = G.F.n8;
+        const sG = G.F.n8; //compressed
+
+        const singularPoints = [];
+
+        const nPointsChunk = Math.floor((1<<24)/sG);
+
+        for (let i=0; i< nPoints; i += nPointsChunk) {
+            if (logger) logger.debug(`Importing ${sectionName}: ${i}/${nPoints}`);
+            const n = Math.min(nPoints-i, nPointsChunk);
+
+            const buffC = await fdFrom.read(n * sG);
+            //hasherResponse.update(buffC);
+
+            const buffLEM = await G.batchCtoLEM(buffC);
+
+            for (let j=0; j<singularPointIndexes.length; j++) {
+                const sp = singularPointIndexes[j];
+                if ((sp >=i) && (sp < i+n)) {
+                    const P = G.fromRprLEM(buffLEM, (sp-i)*sG);
+                    singularPoints.push(P);
+                }
+            }
+        }
+
+        return singularPoints;
+    }
+
 }
 
 /*
@@ -12791,6 +12939,13 @@ const commands = [
         action: powersOfTauExportJson
     },
     {
+        cmd: "powersoftau extract pubkey <challenge_file> <pubkey.json> <powers>",
+        description: "Extracts the pubkey from a challenge file to a JSON",
+        alias: ["ptep"],
+        options: "-verbose|v",
+        action: powersOfTauExtractPubkey
+    },
+    {
         cmd: "r1cs info [circuit.r1cs]",
         description: "Print statistics of a circuit",
         alias: ["ri", "info -r|r1cs:circuit.r1cs"],
@@ -13536,6 +13691,24 @@ async function powersOfTauExportJson(params, options) {
     const pTauJson = await exportJson(ptauName, logger);
 
     await bfj__default["default"].write(jsonName, pTauJson, {space: 1});
+}
+
+
+async function powersOfTauExtractPubkey(params, options) {
+    let response;
+    let newJsonName;
+    let power;
+
+    response = params[0];
+    newJsonName = params[1];
+    power = params[2];
+
+    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+
+    const res = await extractPubkey(response, newJsonName, power, logger);
+
+    if (res) return res;
+    return;
 }
 
 

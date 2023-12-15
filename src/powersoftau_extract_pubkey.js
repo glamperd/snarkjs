@@ -47,8 +47,7 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
 
     const expectedSize =         64 +               // Old Hash
         768 +              // pubkey
-        sG1 +              // alpha G1
-        sG1 +              // beta G1
+        sG2 +              // beta G2
         ((2 ** (pow+1)) - 1)*sG1 +
         (2 ** pow)*sG2 +
         (2 ** pow)*sG1 +
@@ -65,10 +64,6 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
 
     const startSections = [];
     let res;
-    res = await processSection(fdResponse, "G1", 1, [0], "alphaG1");
-    res = await processSection(fdResponse, "G1", 1, [0], "betaG1");
-    res = await processSection(fdResponse, "G2", 1, [0], "betaG2");
-    currentContribution.betaG2 = res[0];
     res = await processSection(fdResponse, "G1", (2 ** (pow+1) - 1), [0], "tauG1");
     currentContribution.tauG1 = res[0];
     res = await processSection(fdResponse, "G2", (2 ** power), [0], "tauG2");
@@ -77,6 +72,8 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
     currentContribution.alphaG1 = res[0];
     res = await processSection(fdResponse, "G1", (2 ** power), [0], "betaG1");
     currentContribution.betaG1 = res[0];
+    res = await processSection(fdResponse, "G2", 1, [0], "betaG2");
+    currentContribution.betaG2 = res[0];
 
     currentContribution.partialHash = hasherResponse.getPartialHash();
 
@@ -105,7 +102,15 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
     //const contributions = [];
 
     //await utils.writeContributions(fdNew, curve, contributions);
-    const json = JSON.stringify(currentContribution);
+    let pubkey = {
+        tauG1: misc.byteArray2hex(currentContribution.tauG1),
+        tauG2: misc.byteArray2hex(currentContribution.tauG2),
+        alphaG1: misc.byteArray2hex(currentContribution.alphaG1),
+        betaG1: misc.byteArray2hex(currentContribution.betaG1),
+        betaG2: misc.byteArray2hex(currentContribution.betaG2),
+        key: currentContribution.key
+    }
+    const json = JSON.stringify(pubkey);
     fs.writeFileSync(jsonFilename, json);
 
     await fdResponse.close();
