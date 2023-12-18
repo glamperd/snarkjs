@@ -108,14 +108,26 @@ export default async function extractPubkey( contributionFilename, jsonFilename,
         alphaG1: misc.byteArray2hex(currentContribution.alphaG1),
         betaG1: misc.byteArray2hex(currentContribution.betaG1),
         betaG2: misc.byteArray2hex(currentContribution.betaG2),
-        key: currentContribution.key
-    }
+        key: {
+            tau: keyElementToHex(currentContribution.key.tau),
+            alpha: keyElementToHex(currentContribution.key.alpha),
+            beta: keyElementToHex(currentContribution.key.beta)
+        }
+    };
     const json = JSON.stringify(pubkey);
     fs.writeFileSync(jsonFilename, json);
 
     await fdResponse.close();
 
     return currentContribution.nextChallenge;
+
+    function keyElementToHex(keyElement) {
+        return {
+            g1_s: misc.byteArray2hex(keyElement.g1_s),
+            g1_sx: misc.byteArray2hex(keyElement.g1_sx),
+            g2_spx: misc.byteArray2hex(keyElement.g2_spx),
+        };
+    }
 
     async function processSection(fdFrom, groupName, nPoints, singularPointIndexes, sectionName) {
         return await processSectionImportPoints(fdFrom, groupName, nPoints, singularPointIndexes, sectionName);
