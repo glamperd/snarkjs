@@ -45,7 +45,10 @@
             "import",
             "prepared",
             "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\phase1radix2m0",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\converted_0.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\beacon_0005.ch",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot-nopoints_0005.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\beacon_pubkey.json",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\pot10_0005_00.ptau",
             "0"
         ],
         "request": "launch",
