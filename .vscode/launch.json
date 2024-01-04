@@ -80,7 +80,7 @@
         "args": [
             "powersoftau",
             "verify",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\test1\\pot15_0002_test.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\pot10_0005_00.ptau",
             "-v"
         ],
         "request": "launch",

@@ -1652,7 +1652,7 @@ async function importPrepared( preparedFilename, beaconFilename, contribsPtauFil
 
     let currentContribution = deserialiseContribution(beaconContrib);
 
-    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 10);
+    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 11);
     await writePTauHeader(fdNew, curve, power);
 
     const contributionPreviousHash = await fdBeacon.read(64);
@@ -1696,12 +1696,17 @@ async function importPrepared( preparedFilename, beaconFilename, contribsPtauFil
     const {fd, sections} = await binFileUtils__namespace.readBinFile(contribsPtauFilename, "ptau", 1);
     contributions = await readContributions(fd, curve, sections);
     contributions.push(currentContribution);
+    if (contributions.length >= 1) {
+        contributions[contributions.length - 1].nextChallenge = contributionPreviousHash;
+    }
 
     await writeContributions(fdNew, curve, contributions);
 
     await fd.close();
     await fdResponse.close();
     await fdNew.close();
+
+    if (logger) logger.info("Done");
 
     return currentContribution.nextChallenge;
 
