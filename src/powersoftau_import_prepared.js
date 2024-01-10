@@ -30,7 +30,7 @@ import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
 import { getCurveFromName } from "./curves.js";
 
-export default async function importPrepared( preparedFilename, beaconFilename, beaconResponseFilename, contribsPtauFilename, newPTauFilename, power, logger) {
+export default async function importPrepared( preparedFilename, beaconFilename, beaconResponseFilename, contribsPtauFilename, newPTauFilename, cPower, filePower, logger) {
 
     await Blake2b.ready();
 
@@ -52,11 +52,11 @@ export default async function importPrepared( preparedFilename, beaconFilename, 
         sG1 +              // alpha G1
         sG1 +              // beta G1
         sG2 +              // Beta G2
-        ((2 ** power)-1)*sG1 +  // tau coeffs G1
-        (2 ** power)*sG2 +      //  tau coeffs G2
-        (2 ** power)*sG1 +      // alpha coeffs G1
-        (2 ** power)*sG1 +      // Beta coeffs G1
-        (2 ** power)*sG1;       // H
+        ((2 ** filePower)-1)*sG1 +  // tau coeffs G1
+        (2 ** filePower)*sG2 +      //  tau coeffs G2
+        (2 ** filePower)*sG1 +      // alpha coeffs G1
+        (2 ** filePower)*sG1 +      // Beta coeffs G1
+        (2 ** filePower)*sG1;       // H
 
     if  (fdPrepared.totalSize != expectedSize)
         throw new Error("Size of the contribution is invalid");
@@ -75,7 +75,7 @@ export default async function importPrepared( preparedFilename, beaconFilename, 
     }
 
     const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 11);
-    await utils.writePTauHeader(fdNew, curve, power);
+    await utils.writePTauHeader(fdNew, curve, filePower);
 
     const contributionPreviousHash = await fdBeaconResp.read(64);
     const hasherResponse = new Blake2b(64);
@@ -96,38 +96,35 @@ export default async function importPrepared( preparedFilename, beaconFilename, 
         throw new Error("Wrong contribution. This contribution is not based on the previous hash");
     }
 
-
-
-
     fdBeacon.pos += 64; // Skip hash
     const startSections = [];
     let res;
     // Sections from beacon file
-    res = await processSection(fdBeacon, fdNew, "G1", 2, (2 ** power) * 2 - 1, [1], "tauG1");
+    res = await processSection(fdBeacon, fdNew, "G1", 2, (2 ** cPower) * 2 - 1, [1], "tauG1");
     currentContribution.tauG1 = res[0];
-    res = await processSection(fdBeacon, fdNew, "G1", 3, (2 ** power), [1], "tauG2");
+    res = await processSection(fdBeacon, fdNew, "G1", 3, (2 ** cPower), [1], "tauG2");
     currentContribution.tauG2 = res[0];
-    res = await processSection(fdBeacon, fdNew, "G1", 4, (2 ** power), [0], "alphaG1");
+    res = await processSection(fdBeacon, fdNew, "G1", 4, (2 ** cPower), [0], "alphaG1");
     currentContribution.alphaG1 = res[0];
-    res = await processSection(fdBeacon, fdNew, "G1", 5, (2 ** power), [0], "betaG1");
+    res = await processSection(fdBeacon, fdNew, "G1", 5, (2 ** cPower), [0], "betaG1");
     currentContribution.betaG1 = res[0];
 
     // Sections from prepared file
     res = await processSection(fdPrepared, fdNew, "G2", 6, 1, [0], "betaG2");
     currentContribution.betaG2 = res[0];
 
-    await processSection(fdPrepared, fdNew, "G1", 12, (2 ** power)-1, [0], "tauG1");
-    await processSection(fdPrepared, fdNew, "G2", 13, (2 ** power), [0], "tauG2");
-    await processSection(fdPrepared, fdNew, "G1", 14, (2 ** power), [0], "alphaG1");
-    await processSection(fdPrepared, fdNew, "G1", 15, (2 ** power), [0], "betaG1");
+    await processSection(fdPrepared, fdNew, "G1", 12, (2 ** filePower)-1, [0], "tauG1");
+    await processSection(fdPrepared, fdNew, "G2", 13, (2 ** filePower), [0], "tauG2");
+    await processSection(fdPrepared, fdNew, "G1", 14, (2 ** filePower), [0], "alphaG1");
+    await processSection(fdPrepared, fdNew, "G1", 15, (2 ** filePower), [0], "betaG1");
 
     currentContribution.partialHash = hasherResponse.getPartialHash();
 
     // Skip sections (compressed points)
-    fdBeaconResp.pos += (2 ** power) * 2 -1 * scG1
-                     +  (2 ** power) * scG2
-                     +  (2 ** power) * scG1
-                     +  (2 ** power) * scG1
+    fdBeaconResp.pos += (2 ** cPower) * 2 -1 * scG1
+                     +  (2 ** cPower) * scG2
+                     +  (2 ** cPower) * scG1
+                     +  (2 ** cPower) * scG1
                      +  scG2;
     const buffKey = await fdBeaconResp.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
 
@@ -141,10 +138,10 @@ export default async function importPrepared( preparedFilename, beaconFilename, 
     const nextChallengeHasher = new Blake2b(64);
     nextChallengeHasher.update(hashResponse);
 
-    await hashSection(nextChallengeHasher, fdNew, "G1", 12, (2 ** power) , "tauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G2", 13, (2 ** power) , "tauG2", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G1", 14, (2 ** power) , "alphaTauG1", logger);
-    await hashSection(nextChallengeHasher, fdNew, "G1", 15, (2 ** power) , "betaTauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 12, (2 ** filePower) , "tauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G2", 13, (2 ** filePower) , "tauG2", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 14, (2 ** filePower) , "alphaTauG1", logger);
+    await hashSection(nextChallengeHasher, fdNew, "G1", 15, (2 ** filePower) , "betaTauG1", logger);
     await hashSection(nextChallengeHasher, fdNew, "G2", 6, 1             , "betaG2", logger);
 
     currentContribution.nextChallenge = nextChallengeHasher.digest();

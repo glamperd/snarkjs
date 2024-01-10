@@ -782,18 +782,20 @@ async function powersOfTauImportPrepared(params, options) {
     let beaconResp;
     let contribs;
     let newPtauName;
-    let power;
+    let ceremonyPower;
+    let filePower;
 
     prepared = params[0];
     beacon = params[1];
     beaconResp = params[2];
     contribs = params[3];
     newPtauName = params[4];
-    power = params[5];
+    ceremonyPower = params[5];
+    filePower = params[6];
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    const res = await powersOfTau.importPrepared(prepared, beacon, beaconResp, contribs, newPtauName, power, logger);
+    const res = await powersOfTau.importPrepared(prepared, beacon, beaconResp, contribs, newPtauName, ceremonyPower, filePower, logger);
 
     if (res) return res;
     return;

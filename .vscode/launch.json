@@ -49,6 +49,7 @@
             "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\beacon_0005",
             "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot-nopoints_0005.ptau",
             "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\pot10_0005_00.ptau",
+            "10",
             "0"
         ],
         "request": "launch",
