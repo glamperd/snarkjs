@@ -45,7 +45,7 @@ export default async function contribute(oldPtauFilename, newPTauFilename, name,
     const contributions = await utils.readContributions(fdOld, curve, sections);
     const curContribution = {
         name: name,
-        type: 0, // Beacon
+        type: 0, // Beacon=1
     };
 
     let lastChallengeHash;

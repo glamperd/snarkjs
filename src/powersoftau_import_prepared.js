@@ -29,10 +29,8 @@ import * as utils from "./powersoftau_utils.js";
 import * as binFileUtils from "@iden3/binfileutils";
 import * as misc from "./misc.js";
 import { getCurveFromName } from "./curves.js";
-import * as fs from 'fs';
-import { Scalar, utils as ffUtils } from "ffjavascript";
 
-export default async function importPrepared( preparedFilename, beaconFilename, contribsPtauFilename, beaconContribFilename, newPTauFilename, power, logger) {
+export default async function importPrepared( preparedFilename, beaconFilename, beaconResponseFilename, contribsPtauFilename, newPTauFilename, power, logger) {
 
     await Blake2b.ready();
 
@@ -46,7 +44,9 @@ export default async function importPrepared( preparedFilename, beaconFilename, 
     const sG2 = curve.F2.n8*2;
     const scG2 = curve.F2.n8; // Compressed size
 
-    const fdResponse = await fastFile.readExisting(preparedFilename);
+    const currentContribution = {};
+
+    const fdPrepared = await fastFile.readExisting(preparedFilename);
 
     const expectedSize = 
         sG1 +              // alpha G1
@@ -58,38 +58,80 @@ export default async function importPrepared( preparedFilename, beaconFilename, 
         (2 ** power)*sG1 +      // Beta coeffs G1
         (2 ** power)*sG1;       // H
 
-    if  (fdResponse.totalSize != expectedSize)
+    if  (fdPrepared.totalSize != expectedSize)
         throw new Error("Size of the contribution is invalid");
 
-    const fdBeacon = await fastFile.readExisting(beaconFilename);
+    const fdBeacon = await fastFile.readExisting(beaconFilename); // Challenge file - uncompressed points
+    const fdBeaconResp = await fastFile.readExisting(beaconResponseFilename); // Response file - compressed points.
     // TODO size check?
 
-    const contribStr = fs.readFileSync(beaconContribFilename);
-    const beaconContrib = JSON.parse(contribStr);
+    let contributions = [];
+    const {fd, sections} = await binFileUtils.readBinFile(contribsPtauFilename, "ptau", 1);
+    contributions = await utils.readContributions(fd, curve, sections);
+    let lastChallengeHash;
 
-    let currentContribution = deserialiseContribution(beaconContrib);
+    if (contributions.length>0) {
+        lastChallengeHash = contributions[contributions.length-1].nextChallenge;
+    }
 
     const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 11);
     await utils.writePTauHeader(fdNew, curve, power);
 
-    const contributionPreviousHash = await fdBeacon.read(64);
+    const contributionPreviousHash = await fdBeaconResp.read(64);
     const hasherResponse = new Blake2b(64);
     hasherResponse.update(contributionPreviousHash);
 
+    if (lastChallengeHash && misc.hashIsEqual(noHash,lastChallengeHash)) {
+        lastChallengeHash = contributionPreviousHash;
+        contributions[contributions.length-1].nextChallenge = lastChallengeHash;
+    }
+
+    if(lastChallengeHash && !misc.hashIsEqual(contributionPreviousHash,lastChallengeHash)) {
+        if (logger) {
+            //logger.info("prev hash " + contributionPreviousHash.toString());
+            logger.info(misc.formatHash(contributionPreviousHash, "Prev hash"));
+            //logger.info("last hash type" + typeof(lastChallengeHash));
+            logger.info(misc.formatHash(lastChallengeHash, "Last challenge hash"));
+        }
+        throw new Error("Wrong contribution. This contribution is not based on the previous hash");
+    }
+
+
+
+
+    fdBeacon.pos += 64; // Skip hash
     const startSections = [];
+    let res;
     // Sections from beacon file
-    await processSection(fdBeacon, fdNew, "G1", 2, (2 ** power) * 2 - 1, [0], "tauG1");
-    await processSection(fdBeacon, fdNew, "G1", 3, (2 ** power), [0], "tauG2");
-    await processSection(fdBeacon, fdNew, "G1", 4, (2 ** power), [0], "alphaG1");
-    await processSection(fdBeacon, fdNew, "G1", 5, (2 ** power), [0], "betaG1");
+    res = await processSection(fdBeacon, fdNew, "G1", 2, (2 ** power) * 2 - 1, [1], "tauG1");
+    currentContribution.tauG1 = res[0];
+    res = await processSection(fdBeacon, fdNew, "G1", 3, (2 ** power), [1], "tauG2");
+    currentContribution.tauG2 = res[0];
+    res = await processSection(fdBeacon, fdNew, "G1", 4, (2 ** power), [0], "alphaG1");
+    currentContribution.alphaG1 = res[0];
+    res = await processSection(fdBeacon, fdNew, "G1", 5, (2 ** power), [0], "betaG1");
+    currentContribution.betaG1 = res[0];
+
     // Sections from prepared file
-    await processSection(fdResponse, fdNew, "G2", 6, 1, [0], "betaG2");
-    await processSection(fdResponse, fdNew, "G1", 12, (2 ** power)-1, [0], "tauG1");
-    await processSection(fdResponse, fdNew, "G2", 13, (2 ** power), [0], "tauG2");
-    await processSection(fdResponse, fdNew, "G1", 14, (2 ** power), [0], "alphaG1");
-    await processSection(fdResponse, fdNew, "G1", 15, (2 ** power), [0], "betaG1");
+    res = await processSection(fdPrepared, fdNew, "G2", 6, 1, [0], "betaG2");
+    currentContribution.betaG2 = res[0];
+
+    await processSection(fdPrepared, fdNew, "G1", 12, (2 ** power)-1, [0], "tauG1");
+    await processSection(fdPrepared, fdNew, "G2", 13, (2 ** power), [0], "tauG2");
+    await processSection(fdPrepared, fdNew, "G1", 14, (2 ** power), [0], "alphaG1");
+    await processSection(fdPrepared, fdNew, "G1", 15, (2 ** power), [0], "betaG1");
 
     currentContribution.partialHash = hasherResponse.getPartialHash();
+
+    // Skip sections (compressed points)
+    fdBeaconResp.pos += (2 ** power) * 2 -1 * scG1
+                     +  (2 ** power) * scG2
+                     +  (2 ** power) * scG1
+                     +  (2 ** power) * scG1
+                     +  scG2;
+    const buffKey = await fdBeaconResp.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
+
+    currentContribution.key = utils.fromPtauPubKeyRpr(buffKey, 0, curve, false);
 
     //hasherResponse.update(new Uint8Array(buffKey));
     const hashResponse = hasherResponse.digest();
@@ -109,18 +151,14 @@ export default async function importPrepared( preparedFilename, beaconFilename, 
 
     if (logger) logger.info(misc.formatHash(currentContribution.nextChallenge, "Next Challenge Hash: "));
 
-    let contributions = [];
-    const {fd, sections} = await binFileUtils.readBinFile(contribsPtauFilename, "ptau", 1);
-    contributions = await utils.readContributions(fd, curve, sections);
     contributions.push(currentContribution);
-    if (contributions.length >= 1) {
-        contributions[contributions.length - 1].nextChallenge = contributionPreviousHash;
-    }
 
     await utils.writeContributions(fdNew, curve, contributions);
 
-    await fd.close();
-    await fdResponse.close();
+    await fdBeacon.close();
+    await fdBeaconResp.close();
+    await fd.close(); // old ptau
+    await fdPrepared.close();
     await fdNew.close();
 
     if (logger) logger.info("Done");

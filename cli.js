@@ -89,7 +89,7 @@ const commands = [
         action: powersOfTauImport
     },
     {
-        cmd: "powersoftau import prepared <prepared> <beacon> <contribution> <beaconContrib.json> <powersoftau_new.ptau> <powers>",
+        cmd: "powersoftau import prepared <prepared> <beacon> <beaconResp> <contribution> <powersoftau_new.ptau> <powers>",
         description: "convert a prepared Bellman file to a ptau file",
         alias: ["ptip"],
         options: "-verbose|v ",
@@ -779,21 +779,21 @@ async function powersOfTauImport(params, options) {
 async function powersOfTauImportPrepared(params, options) {
     let prepared;
     let beacon;
+    let beaconResp;
     let contribs;
-    let beaconContrib;
     let newPtauName;
     let power;
 
     prepared = params[0];
     beacon = params[1];
-    contribs = params[2];
-    beaconContrib = params[3];
+    beaconResp = params[2];
+    contribs = params[3];
     newPtauName = params[4];
     power = params[5];
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    const res = await powersOfTau.importPrepared(prepared, beacon, contribs, beaconContrib, newPtauName, power, logger);
+    const res = await powersOfTau.importPrepared(prepared, beacon, beaconResp, contribs, newPtauName, power, logger);
 
     if (res) return res;
     return;
