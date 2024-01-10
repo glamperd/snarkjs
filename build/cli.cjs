@@ -1617,6 +1617,8 @@ async function importResponse(oldPtauFilename, contributionFilename, newPTauFile
 
 async function importPrepared( preparedFilename, beaconFilename, beaconResponseFilename, contribsPtauFilename, newPTauFilename, cPower, filePower, logger) {
 
+    const ceremonyPowers = parseInt(cPower);
+
     await Blake2b__default["default"].ready();
 
     const noHash = new Uint8Array(64);
@@ -1685,14 +1687,23 @@ async function importPrepared( preparedFilename, beaconFilename, beaconResponseF
     const startSections = [];
     let res;
     // Sections from beacon file
-    res = await processSection(fdBeacon, fdNew, "G1", 2, (2 ** cPower) * 2 - 1, [1], "tauG1");
+    let beaconPos = fdBeacon.pos;
+    res = await processSection(fdBeacon, fdNew, "G1", 2, (2 ** filePower) * 2 - 1, [1], "tauG1");
     currentContribution.tauG1 = res[0];
-    res = await processSection(fdBeacon, fdNew, "G1", 3, (2 ** cPower), [1], "tauG2");
+    beaconPos = beaconPos + ((2 ** ceremonyPowers) * 2 - 1) * scG1;
+    fdBeacon.pos = beaconPos;
+    res = await processSection(fdBeacon, fdNew, "G1", 3, (2 ** filePower), [1], "tauG2");
     currentContribution.tauG2 = res[0];
-    res = await processSection(fdBeacon, fdNew, "G1", 4, (2 ** cPower), [0], "alphaG1");
+    beaconPos = beaconPos + (2 ** ceremonyPowers) * scG2;
+    fdBeacon.pos = beaconPos;
+    res = await processSection(fdBeacon, fdNew, "G1", 4, (2 ** filePower), [0], "alphaG1");
     currentContribution.alphaG1 = res[0];
-    res = await processSection(fdBeacon, fdNew, "G1", 5, (2 ** cPower), [0], "betaG1");
+    beaconPos = beaconPos + (2 ** ceremonyPowers) * scG1;
+    fdBeacon.pos = beaconPos;
+    res = await processSection(fdBeacon, fdNew, "G1", 5, (2 ** filePower), [0], "betaG1");
     currentContribution.betaG1 = res[0];
+    beaconPos = beaconPos + (2 ** ceremonyPowers) * scG1;
+    fdBeacon.pos = beaconPos;
 
     // Sections from prepared file
     res = await processSection(fdPrepared, fdNew, "G2", 6, 1, [0], "betaG2");
@@ -1706,10 +1717,10 @@ async function importPrepared( preparedFilename, beaconFilename, beaconResponseF
     currentContribution.partialHash = hasherResponse.getPartialHash();
 
     // Skip sections (compressed points)
-    fdBeaconResp.pos += (2 ** cPower) * 2 -1 * scG1
-                     +  (2 ** cPower) * scG2
-                     +  (2 ** cPower) * scG1
-                     +  (2 ** cPower) * scG1
+    fdBeaconResp.pos += ((2 ** ceremonyPowers) * 2 -1) * scG1
+                     +  (2 ** ceremonyPowers) * scG2
+                     +  (2 ** ceremonyPowers) * scG1
+                     +  (2 ** ceremonyPowers) * scG1
                      +  scG2;
     const buffKey = await fdBeaconResp.read(curve.F1.n8*2*6+curve.F2.n8*2*3);
 
@@ -1748,15 +1759,11 @@ async function importPrepared( preparedFilename, beaconFilename, beaconResponseF
     return currentContribution.nextChallenge;
 
     async function processSection(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName) {
-        return await processSectionImportPoints(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName);
-    }
-
-    async function processSectionImportPoints(fdFrom, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName) {
-
         const G = curve[groupName];
         //const scG = G.F.n8;
         const sG = G.F.n8*2;
 
+        const minPoints = Math.max(nPoints, ...singularPointIndexes.map(i => i+1));
         const singularPoints = [];
 
         await binFileUtils__namespace.startWriteSection(fdTo, sectionId);
@@ -1764,16 +1771,18 @@ async function importPrepared( preparedFilename, beaconFilename, beaconResponseF
 
         startSections[sectionId] = fdTo.pos;
 
-        for (let i=0; i< nPoints; i += nPointsChunk) {
+        for (let i=0; i< minPoints; i += nPointsChunk) {
             if (logger) logger.debug(`Importing ${sectionName}: ${i}/${nPoints}`);
-            const n = Math.min(nPoints-i, nPointsChunk);
+            const n = Math.min(minPoints-i, nPointsChunk);
 
             const buffC = await fdFrom.read(n * sG);
             //hasherResponse.update(buffC);
 
             const buffLEM = await G.batchUtoLEM(buffC);
 
-            await fdTo.write(buffLEM);
+            if (i < nPoints) {
+                await fdTo.write(buffLEM);
+            }
             for (let j=0; j<singularPointIndexes.length; j++) {
                 const sp = singularPointIndexes[j];
                 if ((sp >=i) && (sp < i+n)) {
@@ -12943,7 +12952,7 @@ const commands = [
         action: powersOfTauImport
     },
     {
-        cmd: "powersoftau import prepared <prepared> <beacon> <beaconResp> <contribution> <powersoftau_new.ptau> <powers>",
+        cmd: "powersoftau import prepared <prepared> <beacon> <beaconResp> <contribution> <powersoftau_new.ptau> <ceremonyPowers> <filePowers>",
         description: "convert a prepared Bellman file to a ptau file",
         alias: ["ptip"],
         options: "-verbose|v ",

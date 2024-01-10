@@ -89,7 +89,7 @@ const commands = [
         action: powersOfTauImport
     },
     {
-        cmd: "powersoftau import prepared <prepared> <beacon> <beaconResp> <contribution> <powersoftau_new.ptau> <powers>",
+        cmd: "powersoftau import prepared <prepared> <beacon> <beaconResp> <contribution> <powersoftau_new.ptau> <ceremonyPowers> <filePowers>",
         description: "convert a prepared Bellman file to a ptau file",
         alias: ["ptip"],
         options: "-verbose|v ",
