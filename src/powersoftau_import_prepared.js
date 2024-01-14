@@ -72,7 +72,7 @@ export default async function importPrepared( preparedFilename, oldPtauFilename,
     const startSections = [];
     // Sections from beacon file
     await processSection(fdOld, sections[2], fdNew, "G1", 2, (2 ** filePower) * 2 - 1, [], "tauG1");
-    await processSection(fdOld, sections[3], fdNew, "G1", 3, (2 ** filePower), [], "tauG2");
+    await processSection(fdOld, sections[3], fdNew, "G2", 3, (2 ** filePower), [], "tauG2");
     await processSection(fdOld, sections[4], fdNew, "G1", 4, (2 ** filePower), [], "alphaG1");
     await processSection(fdOld, sections[5], fdNew, "G1", 5, (2 ** filePower), [], "betaG1");
 
