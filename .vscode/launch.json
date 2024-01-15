@@ -44,11 +44,11 @@
             "powersoftau",
             "import",
             "prepared",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\phase1radix2m0",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\phase1radix2m1",
             "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_beacon_0005.ptau",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\pot10_0005_00.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\pot10_0005_01.ptau",
             "10",
-            "0"
+            "1"
         ],
         "request": "launch",
         "skipFiles": [
@@ -79,7 +79,7 @@
         "args": [
             "powersoftau",
             "verify",
-            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\pot10_0005_00.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\pot10_0005_01.ptau",
             "-v"
         ],
         "request": "launch",

@@ -67,22 +67,22 @@ export default async function importPrepared( preparedFilename, oldPtauFilename,
     contributions = await utils.readContributions(fdOld, curve, sections);
 
     const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 11);
-    await utils.writePTauHeader(fdNew, curve, filePower);
+    await utils.writePTauHeader(fdNew, curve, filePower, ceremonyPowers);
 
     const startSections = [];
     // Sections from beacon file
-    await processSection(fdOld, sections[2], fdNew, "G1", 2, (2 ** filePower) * 2 - 1, [], "tauG1");
-    await processSection(fdOld, sections[3], fdNew, "G2", 3, (2 ** filePower), [], "tauG2");
-    await processSection(fdOld, sections[4], fdNew, "G1", 4, (2 ** filePower), [], "alphaG1");
-    await processSection(fdOld, sections[5], fdNew, "G1", 5, (2 ** filePower), [], "betaG1");
+    await processSection(fdOld, sections[2], fdNew, "G1", 2, true, (2 ** filePower) * 2 - 1, [], "tauG1");
+    await processSection(fdOld, sections[3], fdNew, "G2", 3, true, (2 ** filePower), [], "tauG2");
+    await processSection(fdOld, sections[4], fdNew, "G1", 4, true, (2 ** filePower), [], "alphaG1");
+    await processSection(fdOld, sections[5], fdNew, "G1", 5, true, (2 ** filePower), [], "betaG1");
+    await processSection(fdOld, sections[6], fdNew, "G2", 6, true, 1, [], "betaG2");
 
     // Sections from prepared file
-    await processSection(fdPrepared, null, fdNew, "G2", 6, 1, [0], "betaG2");
-
-    await processSection(fdPrepared, null, fdNew, "G1", 12, (2 ** filePower)-1, [0], "tauG1");
-    await processSection(fdPrepared, null, fdNew, "G2", 13, (2 ** filePower), [0], "tauG2");
-    await processSection(fdPrepared, null, fdNew, "G1", 14, (2 ** filePower), [0], "alphaG1");
-    await processSection(fdPrepared, null, fdNew, "G1", 15, (2 ** filePower), [0], "betaG1");
+    fdPrepared.pos += sG2; // skip beta G2
+    await processSection(fdPrepared, null, fdNew, "G1", 12, true, (2 ** filePower)-1, [], "tauG1");
+    await processSection(fdPrepared, null, fdNew, "G2", 13, true, (2 ** filePower), [], "tauG2");
+    await processSection(fdPrepared, null, fdNew, "G1", 14, true, (2 ** filePower), [], "alphaG1");
+    await processSection(fdPrepared, null, fdNew, "G1", 15, true, (2 ** filePower), [], "betaG1");
 
     // Convert last contribution to beacon
     let beaconContrib = contributions[contributions.length - 1];
@@ -100,7 +100,7 @@ export default async function importPrepared( preparedFilename, oldPtauFilename,
 
     return;
 
-    async function processSection(fdFrom, section, fdTo, groupName, sectionId, nPoints, singularPointIndexes, sectionName) {
+    async function processSection(fdFrom, section, fdTo, groupName, sectionId, copyOnly, nPoints, singularPointIndexes, sectionName) {
         const G = curve[groupName];
         //const scG = G.F.n8;
         const sG = G.F.n8*2;
@@ -121,7 +121,9 @@ export default async function importPrepared( preparedFilename, oldPtauFilename,
             const buffC = await fdFrom.read(n * sG);
             //hasherResponse.update(buffC);
 
-            const buffLEM = await G.batchUtoLEM(buffC);
+            let buffLEM = 
+                copyOnly ? buffC
+                    : await G.batchUtoLEM(buffC);
 
             if (i < nPoints) {
                 await fdTo.write(buffLEM);
