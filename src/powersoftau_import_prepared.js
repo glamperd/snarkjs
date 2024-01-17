@@ -78,11 +78,11 @@ export default async function importPrepared( preparedFilename, oldPtauFilename,
     await processSection(fdOld, sections[6], fdNew, "G2", 6, true, 1, [], "betaG2");
 
     // Sections from prepared file
-    fdPrepared.pos += sG2; // skip beta G2
-    await processSection(fdPrepared, null, fdNew, "G1", 12, true, (2 ** filePower)-1, [], "tauG1");
-    await processSection(fdPrepared, null, fdNew, "G2", 13, true, (2 ** filePower), [], "tauG2");
-    await processSection(fdPrepared, null, fdNew, "G1", 14, true, (2 ** filePower), [], "alphaG1");
-    await processSection(fdPrepared, null, fdNew, "G1", 15, true, (2 ** filePower), [], "betaG1");
+    fdPrepared.pos += 2 * sG1 + sG2; // skip alpha G1 and beta G1, G2
+    await processSection(fdPrepared, null, fdNew, "G1", 12, false, (2 ** filePower)-1, [], "tauG1");
+    await processSection(fdPrepared, null, fdNew, "G2", 13, false, (2 ** filePower), [], "tauG2");
+    await processSection(fdPrepared, null, fdNew, "G1", 14, false, (2 ** filePower), [], "alphaG1");
+    await processSection(fdPrepared, null, fdNew, "G1", 15, false, (2 ** filePower), [], "betaG1");
 
     // Convert last contribution to beacon
     let beaconContrib = contributions[contributions.length - 1];
