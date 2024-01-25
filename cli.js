@@ -38,7 +38,7 @@ const {stringifyBigInts} = utils;
 import * as zkey from "./src/zkey.js";
 import * as groth16 from "./src/groth16.js";
 import * as plonk from "./src/plonk.js";
-import * as fflonkCmd from "./src/cmds/fflonk_cmds.js";
+import * as fflonk from "./src/fflonk.js";
 import * as wtns from "./src/wtns.js";
 import * as curves from "./src/curves.js";
 import path from "path";
@@ -194,6 +194,12 @@ const commands = [
         options: "-verbose|v",
         alias: ["wej"],
         action: wtnsExportJson
+    },
+    {
+        cmd: "wtns check [circuit.r1cs] [[witness.wtns]",
+        description: "Check if a specific witness of a circuit fullfills the r1cs constraints",
+        alias: ["wchk"],
+        action: wtnsCheck
     },
     {
         cmd: "zkey contribute <circuit_old.zkey> <circuit_new.zkey>",
@@ -494,6 +500,23 @@ async function wtnsExportJson(params, options) {
     return 0;
 }
 
+// wtns export json  [witness.wtns] [witness.json]
+// -get|g -set|s -trigger|t
+async function wtnsCheck(params, options) {
+    const r1csFilename = params[0] || "circuit.r1cs";
+    const wtnsFilename = params[1] || "witness.wtns";
+
+    if (options.verbose) Logger.setLogLevel("DEBUG");
+
+    const isValid = await wtns.check(r1csFilename, wtnsFilename, logger);
+
+    if (isValid) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
 
 /*
 // zksnark setup [circuit.r1cs] [circuit.zkey] [verification_key.json]
@@ -679,7 +702,7 @@ async function zkeyExportSolidityCalldata(params, options) {
     } else if (proof.protocol == "plonk") {
         res = await plonk.exportSolidityCallData(proof, pub);
     } else if (proof.protocol === "fflonk") {
-        res = await fflonkCmd.fflonkExportCallDataCmd(pub, proof, logger);
+        res = await fflonk.exportSolidityCallData(pub, proof);
     } else {
         throw new Error("Invalid Protocol");
     }
@@ -711,7 +734,10 @@ async function powersOfTauNew(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.newAccumulator(curve, power, ptauName, logger);
+    // Discard firstChallengeHash
+    await powersOfTau.newAccumulator(curve, power, ptauName, logger);
+
+    return 0;
 }
 
 async function powersOfTauExportChallenge(params, options) {
@@ -728,7 +754,10 @@ async function powersOfTauExportChallenge(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.exportChallenge(ptauName, challengeName, logger);
+    // Discard curChallengeHash
+    await powersOfTau.exportChallenge(ptauName, challengeName, logger);
+
+    return 0;
 }
 
 // powersoftau challenge contribute <curve> <challenge> [response]
@@ -748,7 +777,9 @@ async function powersOfTauChallengeContribute(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.challengeContribute(curve, challengeName, responseName, options.entropy, logger);
+    await powersOfTau.challengeContribute(curve, challengeName, responseName, options.entropy, logger);
+
+    return 0;
 }
 
 
@@ -768,10 +799,10 @@ async function powersOfTauImport(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    const res = await powersOfTau.importResponse(oldPtauName, response, newPtauName, options.name, importPoints, logger);
+    const nextChallenge = await powersOfTau.importResponse(oldPtauName, response, newPtauName, options.name, importPoints, logger);
 
-    if (res) return res;
-    if (!doCheck) return;
+    if (nextChallenge) return 0;
+    if (!doCheck) return 0;
 
     // TODO Verify
 }
@@ -825,7 +856,10 @@ async function powersOfTauBeacon(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.beacon(oldPtauName, newPtauName, options.name, beaconHashStr, numIterationsExp, logger);
+    // Discard hashResponse
+    await powersOfTau.beacon(oldPtauName, newPtauName, options.name, beaconHashStr, numIterationsExp, logger);
+
+    return 0;
 }
 
 async function powersOfTauContribute(params, options) {
@@ -837,7 +871,10 @@ async function powersOfTauContribute(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.contribute(oldPtauName, newPtauName, options.name, options.entropy, logger);
+    // Discard hashResponse
+    await powersOfTau.contribute(oldPtauName, newPtauName, options.name, options.entropy, logger);
+
+    return 0;
 }
 
 async function powersOfTauPreparePhase2(params, options) {
@@ -849,7 +886,9 @@ async function powersOfTauPreparePhase2(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.preparePhase2(oldPtauName, newPtauName, logger);
+    await powersOfTau.preparePhase2(oldPtauName, newPtauName, logger);
+
+    return 0;
 }
 
 async function powersOfTauUnprepare(params, options) {
@@ -873,7 +912,9 @@ async function powersOfTauConvert(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.convert(oldPtauName, newPtauName, logger);
+    await powersOfTau.convert(oldPtauName, newPtauName, logger);
+
+    return 0;
 }
 
 
@@ -889,7 +930,10 @@ async function powersOfTauTruncate(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await powersOfTau.truncate(ptauName, template, logger);
+    // Discard `true`
+    await powersOfTau.truncate(ptauName, template, logger);
+
+    return 0;
 }
 
 // powersoftau export json <powersoftau_0000.ptau> <powersoftau_0000.json>",
@@ -952,7 +996,10 @@ async function zkeyNew(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return zkey.newZKey(r1csName, ptauName, zkeyName, logger);
+    // Discard csHash
+    await zkey.newZKey(r1csName, ptauName, zkeyName, logger);
+
+    return 0;
 }
 
 // zkey export bellman [circuit_0000.zkey] [circuit.mpcparams]
@@ -970,8 +1017,9 @@ async function zkeyExportBellman(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return zkey.exportBellman(zkeyName, mpcparamsName, logger);
+    await zkey.exportBellman(zkeyName, mpcparamsName, logger);
 
+    return 0;
 }
 
 
@@ -1074,7 +1122,10 @@ async function zkeyContribute(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return zkey.contribute(zkeyOldName, zkeyNewName, options.name, options.entropy, logger);
+    // Discard contribuionHash
+    await zkey.contribute(zkeyOldName, zkeyNewName, options.name, options.entropy, logger);
+
+    return 0;
 }
 
 // zkey beacon <circuit_old.zkey> <circuit_new.zkey> <beaconHash(Hex)> <numIterationsExp>
@@ -1091,7 +1142,10 @@ async function zkeyBeacon(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await zkey.beacon(zkeyOldName, zkeyNewName, options.name, beaconHashStr, numIterationsExp, logger);
+    // Discard contribuionHash
+    await zkey.beacon(zkeyOldName, zkeyNewName, options.name, beaconHashStr, numIterationsExp, logger);
+
+    return 0;
 }
 
 
@@ -1112,7 +1166,10 @@ async function zkeyBellmanContribute(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return zkey.bellmanContribute(curve, challengeName, responseName, options.entropy, logger);
+    // Discard contributionHash
+    await zkey.bellmanContribute(curve, challengeName, responseName, options.entropy, logger);
+
+    return 0;
 }
 
 
@@ -1142,6 +1199,7 @@ async function plonkSetup(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
+    // TODO: Make plonk.setup reject instead of returning -1 or null
     return plonk.setup(r1csName, ptauName, zkeyName, logger);
 }
 
@@ -1216,7 +1274,8 @@ async function fflonkSetup(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await fflonkCmd.fflonkSetupCmd(r1csFilename, ptauFilename, zkeyFilename, logger);
+    // TODO: Make fflonk.setup return valuable information or nothing at all
+    return await fflonk.setup(r1csFilename, ptauFilename, zkeyFilename, logger);
 }
 
 
@@ -1228,7 +1287,15 @@ async function fflonkProve(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await fflonkCmd.fflonkProveCmd(zkeyFilename, witnessFilename, publicInputsFilename, proofFilename, logger);
+    const {proof, publicSignals} = await fflonk.prove(zkeyFilename, witnessFilename, logger);
+
+    if(undefined !== proofFilename && undefined !== publicInputsFilename) {
+        // Write the proof and the publig signals in each file
+        await bfj.write(proofFilename, stringifyBigInts(proof), {space: 1});
+        await bfj.write(publicInputsFilename, stringifyBigInts(publicSignals), {space: 1});
+    }
+
+    return 0;
 }
 
 async function fflonkFullProve(params, options) {
@@ -1241,7 +1308,15 @@ async function fflonkFullProve(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    return await fflonkCmd.fflonkFullProveCmd(zkeyFilename, witnessInputsFilename, wasmFilename, publicInputsFilename, proofFilename, logger);
+    const input = JSON.parse(await fs.promises.readFile(witnessInputsFilename, "utf8"));
+
+    const {proof, publicSignals} = await fflonk.fullProve(input, wasmFilename, zkeyFilename, logger);
+
+    // Write the proof and the publig signals in each file
+    await bfj.write(proofFilename, stringifyBigInts(proof), {space: 1});
+    await bfj.write(publicInputsFilename, stringifyBigInts(publicSignals), {space: 1});
+
+    return 0;
 }
 
 async function fflonkVerify(params, options) {
@@ -1251,7 +1326,11 @@ async function fflonkVerify(params, options) {
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
-    const isValid = await fflonkCmd.fflonkVerifyCmd(vkeyFilename, publicInputsFilename, proofFilename, logger);
+    const vkey = JSON.parse(fs.readFileSync(vkeyFilename, "utf8"));
+    const publicInputs = JSON.parse(fs.readFileSync(publicInputsFilename, "utf8"));
+    const proof = JSON.parse(fs.readFileSync(proofFilename, "utf8"));
+
+    const isValid = await fflonk.verify(vkey, publicInputs, proof, logger);
 
     return isValid ? 0 : 1;
 }

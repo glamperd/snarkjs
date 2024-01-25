@@ -15,8 +15,19 @@
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
 
-import fflonkExportCallData from "../fflonk_export_calldata.js";
+import fflonkProve from "./fflonk_prove.js";
+import wtns_calculate from "./wtns_calculate.js";
+import {utils} from "ffjavascript";
+const {unstringifyBigInts} = utils;
 
-export async function fflonkExportCallDataCmd(publicInputs, proof, logger) {
-    return await fflonkExportCallData(publicInputs, proof, logger);
+export default async function fflonkFullProve(_input, wasmFilename, zkeyFilename, logger) {
+    const input = unstringifyBigInts(_input);
+
+    const wtns= {type: "mem"};
+
+    // Compute the witness
+    await wtns_calculate(input, wasmFilename, wtns);
+
+    // Compute the proof
+    return await fflonkProve(zkeyFilename, wtns, logger);
 }

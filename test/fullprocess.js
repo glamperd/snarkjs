@@ -22,14 +22,13 @@ describe("Full process", function ()  {
     const bellman_1 = {type: "mem"};
     const bellman_2 = {type: "mem"};
     let vKey;
-    let vKeyPlonk;
     const wtns = {type: "mem"};
     let proof;
     let publicSignals;
 
     before( async () => {
         curve = await getCurveFromName("bn128");
-//        curve.Fr.s = 10;
+        // curve.Fr.s = 10;
     });
     after( async () => {
         await curve.terminate();
@@ -110,6 +109,10 @@ describe("Full process", function ()  {
 
     it ("witness calculate", async () => {
         await snarkjs.wtns.calculate({a: 11, b:2}, path.join("test", "circuit", "circuit.wasm"), wtns);
+    });
+
+    it ("checks witness complies with r1cs", async () => {
+        await snarkjs.wtns.check(path.join("test", "circuit", "circuit.r1cs"), wtns);
     });
 
     it ("groth16 proof", async () => {

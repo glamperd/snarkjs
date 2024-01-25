@@ -38,12 +38,11 @@ import {
     ZKEY_FF_SIGMA1_SECTION,
     ZKEY_FF_SIGMA2_SECTION,
     ZKEY_FF_SIGMA3_SECTION,
-} from "./fflonk.js";
+} from "./fflonk_constants.js";
 import { Keccak256Transcript } from "./Keccak256Transcript.js";
 import { Proof } from "./proof.js";
 import { Polynomial } from "./polynomial/polynomial.js";
 import { Evaluations } from "./polynomial/evaluations.js";
-import { MulZ } from "./mul_z.js";
 import { CPolynomial } from "./polynomial/cpolynomial.js";
 
 const { stringifyBigInts } = utils;
@@ -372,6 +371,14 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
                 buffers.C.set(getWitness(signalIdC), i_sFr);
             }
 
+            // Blind a(X), b(X) and c(X) polynomials coefficients with blinding scalars b
+            buffers.A.set(challenges.b[1], sDomain - 64);
+            buffers.A.set(challenges.b[2], sDomain - 32);
+            buffers.B.set(challenges.b[3], sDomain - 64);
+            buffers.B.set(challenges.b[4], sDomain - 32);
+            buffers.C.set(challenges.b[5], sDomain - 64);
+            buffers.C.set(challenges.b[6], sDomain - 32);
+
             buffers.A = await Fr.batchToMontgomery(buffers.A);
             buffers.B = await Fr.batchToMontgomery(buffers.B);
             buffers.C = await Fr.batchToMontgomery(buffers.C);
@@ -392,19 +399,14 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             if (logger) logger.info("··· Computing C fft");
             evaluations.C = await Evaluations.fromPolynomial(polynomials.C, 4, curve, logger);
 
-            // Blind a(X), b(X) and c(X) polynomials coefficients with blinding scalars b
-            polynomials.A.blindCoefficients([challenges.b[2], challenges.b[1]]);
-            polynomials.B.blindCoefficients([challenges.b[4], challenges.b[3]]);
-            polynomials.C.blindCoefficients([challenges.b[6], challenges.b[5]]);
-
             // Check degrees
-            if (polynomials.A.degree() >= zkey.domainSize + 2) {
+            if (polynomials.A.degree() >= zkey.domainSize) {
                 throw new Error("A Polynomial is not well calculated");
             }
-            if (polynomials.B.degree() >= zkey.domainSize + 2) {
+            if (polynomials.B.degree() >= zkey.domainSize) {
                 throw new Error("B Polynomial is not well calculated");
             }
-            if (polynomials.C.degree() >= zkey.domainSize + 2) {
+            if (polynomials.C.degree() >= zkey.domainSize) {
                 throw new Error("C Polynomial is not well calculated");
             }
         }
@@ -430,13 +432,10 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             const lagrangePolynomials = await binFileUtils.readSection(fdZKey, zkeySections, ZKEY_FF_LAGRANGE_SECTION);
             evaluations.lagrange1 = new Evaluations(lagrangePolynomials, curve, logger);
 
-            // Reserve memory for buffers T0 and T0z
+            // Reserve memory for buffers T0
             buffers.T0 = new BigBuffer(sDomain * 4);
-            buffers.T0z = new BigBuffer(sDomain * 4);
 
             if (logger) logger.info("··· Computing T0 evaluations");
-            // Initial omega
-            let omega = Fr.one;
             for (let i = 0; i < zkey.domainSize * 4; i++) {
                 if (logger && (0 !== i) && (i % 100000 === 0)) logger.info(`      T0 evaluation ${i}/${zkey.domainSize * 4}`);
 
@@ -450,11 +449,6 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
                 const qm = evaluations.QM.getEvaluation(i);
                 const qo = evaluations.QO.getEvaluation(i);
                 const qc = evaluations.QC.getEvaluation(i);
-
-                // Compute blinding factors
-                const az = Fr.add(Fr.mul(challenges.b[1], omega), challenges.b[2]);
-                const bz = Fr.add(Fr.mul(challenges.b[3], omega), challenges.b[4]);
-                const cz = Fr.add(Fr.mul(challenges.b[5], omega), challenges.b[6]);
 
                 // Compute current public input
                 let pi = Fr.zero;
@@ -471,30 +465,20 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
                 // Compute first T0(X)·Z_H(X), so divide later the resulting polynomial by Z_H(X)
                 // expression 1 -> q_L(X)·a(X)
                 const e1 = Fr.mul(a, ql);
-                const e1z = Fr.mul(az, ql);
 
                 // expression 2 -> q_R(X)·b(X)
                 const e2 = Fr.mul(b, qr);
-                const e2z = Fr.mul(bz, qr);
 
                 // expression 3 -> q_M(X)·a(X)·b(X)
-                let [e3, e3z] = MulZ.mul2(a, b, az, bz, i % 4, Fr);
-                e3 = Fr.mul(e3, qm);
-                e3z = Fr.mul(e3z, qm);
+                const e3 = Fr.mul(Fr.mul(a, b), qm);
 
                 // expression 4 -> q_O(X)·c(X)
                 const e4 = Fr.mul(c, qo);
-                const e4z = Fr.mul(cz, qo);
 
                 // t0 = expressions 1 + expression 2 + expression 3 + expression 4 + qc + pi
                 const t0 = Fr.add(e1, Fr.add(e2, Fr.add(e3, Fr.add(e4, Fr.add(qc, pi)))));
-                const t0z = Fr.add(e1z, Fr.add(e2z, Fr.add(e3z, e4z)));
 
                 buffers.T0.set(t0, i * sFr);
-                buffers.T0z.set(t0z, i * sFr);
-
-                // Next omega
-                omega = Fr.mul(omega, Fr.w[zkey.power + 2]);
             }
 
             if (logger) logger.info("buffer T0: " + buffers.T0.byteLength / sFr);
@@ -510,27 +494,12 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             if (logger) logger.info("··· Computing T0 / ZH");
             polynomials.T0.divByZerofier(zkey.domainSize, Fr.one);
 
-            // Compute the coefficients of the polynomial T0z(X) from buffers.T0z
-            if (logger) logger.info("··· Computing T0z ifft");
-            polynomials.T0z = await Polynomial.fromEvaluations(buffers.T0z, curve, logger);
-
-            if (logger) logger.info("T0z length: " + polynomials.T0z.length());
-            if (logger) logger.info("T0z degree: " + polynomials.T0z.degree());
-
-            // Add the polynomial T0z to T0 to get the final polynomial T0
-            polynomials.T0.add(polynomials.T0z);
-
-            if (logger) logger.info("T0 length: " + polynomials.T0.length());
-            if (logger) logger.info("T0 degree: " + polynomials.T0.degree());
-
             // Check degree
-            if (polynomials.T0.degree() >= 2 * zkey.domainSize + 2) {
+            if (polynomials.T0.degree() >= 2 * zkey.domainSize - 2) {
                 throw new Error(`T0 Polynomial is not well calculated (degree is ${polynomials.T0.degree()} and must be less than ${2 * zkey.domainSize + 2}`);
             }
 
             delete buffers.T0;
-            delete buffers.T0z;
-            delete polynomials.T0z;
         }
 
         async function computeC1() {
@@ -543,7 +512,7 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             polynomials.C1 = C1.getPolynomial();
 
             // Check degree
-            if (polynomials.C1.degree() >= 8 * zkey.domainSize + 8) {
+            if (polynomials.C1.degree() >= 8 * zkey.domainSize - 8) {
                 throw new Error("C1 Polynomial is not well calculated");
             }
         }
@@ -734,7 +703,7 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             if (logger) logger.info("··· Computing T1z ifft");
             polynomials.T1z = await Polynomial.fromEvaluations(buffers.T1z, curve, logger);
 
-            // Add the polynomial T0z to T0 to get the final polynomial T0
+            // Add the polynomial T1z to T1 to get the final polynomial T1
             polynomials.T1.add(polynomials.T1z);
 
             // Check degree
@@ -768,9 +737,6 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
                 const z = evaluations.Z.getEvaluation(i);
                 const zW = evaluations.Z.getEvaluation((zkey.domainSize * 4 + 4 + i) % (zkey.domainSize * 4));
 
-                const ap = Fr.add(Fr.mul(challenges.b[1], omega), challenges.b[2]);
-                const bp = Fr.add(Fr.mul(challenges.b[3], omega), challenges.b[4]);
-                const cp = Fr.add(Fr.mul(challenges.b[5], omega), challenges.b[6]);
                 const zp = Fr.add(Fr.add(Fr.mul(challenges.b[7], omega2), Fr.mul(challenges.b[8], omega)), challenges.b[9]);
                 const zWp = Fr.add(Fr.add(Fr.mul(challenges.b[7], omegaW2), Fr.mul(challenges.b[8], omegaW)), challenges.b[9]);
 
@@ -794,7 +760,9 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
                 let e13 = Fr.add(c, Fr.mul(betaX, zkey.k2));
                 e13 = Fr.add(e13, challenges.gamma);
 
-                const [e1, e1z] = MulZ.mul4(e11, e12, e13, z, ap, bp, cp, zp, i % 4, Fr);
+                let e1 = Fr.mul(Fr.mul(Fr.mul(e11, e12), e13), z);
+                let e1z = Fr.mul(Fr.mul(Fr.mul(e11, e12), e13), zp);
+                // const [e1, e1z] = MulZ.mul4(e11, e12, e13, z, ap, bp, cp, zp, i % 4, Fr);
 
                 // expression 2 -> (a(X) + beta·sigma1(X) + gamma)(b(X) + beta·sigma2(X) + gamma)(c(X) + beta·sigma3(X) + gamma)z(Xω)
                 let e21 = Fr.add(a, Fr.mul(challenges.beta, sigma1));
@@ -806,7 +774,9 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
                 let e23 = Fr.add(c, Fr.mul(challenges.beta, sigma3));
                 e23 = Fr.add(e23, challenges.gamma);
 
-                const [e2, e2z] = MulZ.mul4(e21, e22, e23, zW, ap, bp, cp, zWp, i % 4, Fr);
+                let e2 = Fr.mul(Fr.mul(Fr.mul(e21, e22), e23), zW);
+                let e2z = Fr.mul(Fr.mul(Fr.mul(e21, e22), e23), zWp);
+                // const [e2, e2z] = MulZ.mul4(e21, e22, e23, zW, ap, bp, cp, zWp, i % 4, Fr);
 
                 let t2 = Fr.sub(e1, e2);
                 let t2z = Fr.sub(e1z, e2z);
@@ -834,7 +804,7 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             polynomials.T2.add(polynomials.T2z);
 
             // Check degree
-            if (polynomials.T2.degree() >= 3 * zkey.domainSize + 6) {
+            if (polynomials.T2.degree() >= 3 * zkey.domainSize) {
                 throw new Error("T2 Polynomial is not well calculated");
             }
 
@@ -852,7 +822,7 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             polynomials.C2 = C2.getPolynomial();
 
             // Check degree
-            if (polynomials.C2.degree() >= 9 * zkey.domainSize + 18) {
+            if (polynomials.C2.degree() >= 9 * zkey.domainSize) {
                 throw new Error("C2 Polynomial is not well calculated");
             }
         }
@@ -1079,8 +1049,7 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             polynomials.F.add(f2);
             polynomials.F.add(f3);
 
-            // Check degree < 9n + 12
-            if (polynomials.F.degree() >= 9 * zkey.domainSize + 12) {
+            if (polynomials.F.degree() >= 9 * zkey.domainSize - 6) {
                 throw new Error("F Polynomial is not well calculated");
             }
         }
@@ -1117,7 +1086,7 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             throw new Error(`Degree of L(X)/(ZTS2(y)(X-y)) remainder is ${polRemainder.degree()} and should be 0`);
         }
 
-        if (polynomials.L.degree() >= 9 * zkey.domainSize + 17) {
+        if (polynomials.L.degree() >= 9 * zkey.domainSize - 1) {
             throw new Error("Degree of L(X)/(ZTS2(y)(X-y)) is not correct");
         }
 
@@ -1184,7 +1153,7 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
             polynomials.L.sub(polynomials.F);
 
             // Check degree
-            if (polynomials.L.degree() >= 9 * zkey.domainSize + 18) {
+            if (polynomials.L.degree() >= 9 * zkey.domainSize) {
                 throw new Error("L Polynomial is not well calculated");
             }
 
@@ -1221,17 +1190,11 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
         //     toInverse.denH1 & toInverse.denH2  -> Computed in round5, computeL()
 
         //   · denominator needed in the verifier when computing L_i^{S0}(X), L_i^{S1}(X) and L_i^{S2}(X)
-        for (let i = 0; i < 8; i++) {
-            toInverse["LiS0_" + (i + 1)] = computeLiS0(i);
-        }
+        computeLiS0(toInverse, roots.S0.h0w8, challenges.y, curve);
 
-        for (let i = 0; i < 4; i++) {
-            toInverse["LiS1_" + (i + 1)] = computeLiS1(i);
-        }
+        computeLiS1(toInverse, roots.S1.h1w4, challenges.y, curve);
 
-        for (let i = 0; i < 6; i++) {
-            toInverse["LiS2_" + (i + 1)] = computeLiS2(i);
-        }
+        computeLiS2(toInverse, roots.S2.h2w3, roots.S2.h3w3, challenges.y, challenges.xi, challenges.xiw, curve);
 
         //   · L_i i=1 to num public inputs, needed in step 6 and 7 of the verifier to compute L_1(xi) and PI(xi)
         const size = Math.max(1, zkey.nPublic);
@@ -1239,52 +1202,84 @@ export default async function fflonkProve(zkeyFileName, witnessFileName, logger)
         let w = Fr.one;
         for (let i = 0; i < size; i++) {
             toInverse["Li_" + (i + 1)] = Fr.mul(Fr.e(zkey.domainSize), Fr.sub(challenges.xi, w));
-
-            w = Fr.mul(w, zkey.w);
+            w = Fr.mul(w, Fr.w[zkey.power]);
         }
 
         let mulAccumulator = Fr.one;
         for (const element of Object.values(toInverse)) {
-            mulAccumulator = Fr.mul(mulAccumulator, element);
+            if(Array.isArray(element)) {
+                for (const subElement of element) {
+                    mulAccumulator = Fr.mul(mulAccumulator, subElement);
+                }
+            } else {
+                mulAccumulator = Fr.mul(mulAccumulator, element);
+            }
         }
         return Fr.inv(mulAccumulator);
 
-        function computeLiS0(i) {
-            // Compute L_i^{(S0)}(y)
-            let idx = i;
-            let den = Fr.one;
-            for (let j = 0; j < 7; j++) {
-                idx = (idx + 1) % 8;
-
-                den = Fr.mul(den, Fr.sub(roots.S0.h0w8[i], roots.S0.h0w8[idx]));
+        
+        function computeLiS0(toInverse, roots, x, curve) {
+            const Fr = curve.Fr;
+            const len = roots.length;
+        
+            const den1 = Fr.mul(Fr.e(len), Fr.exp(roots[0], len - 2));
+        
+            const Li = [];
+            for (let i = 0; i < len; i++) {
+                const den2 = roots[((len - 1) * i) % len];
+                const den3 = Fr.sub(x, roots[i]);
+        
+                toInverse[["LiS0_" + (i + 1)]] = Fr.mul(Fr.mul(den1, den2), den3);
             }
-            return den;
+        
+            return Li;
         }
 
-        function computeLiS1(i) {
-            // Compute L_i^{(S1)}(y)
-            let idx = i;
-            let den = Fr.one;
-            for (let j = 0; j < 3; j++) {
-                idx = (idx + 1) % 4;
+        function computeLiS1(toInverse, roots, x, curve) {
+            const Fr = curve.Fr;
+            const len = roots.length;
+        
+            const den1 = Fr.mul(Fr.e(len), Fr.exp(roots[0], len - 2));
+        
+            const Li = [];
+            for (let i = 0; i < len; i++) {
+                const den2 = roots[((len - 1) * i) % len];
+                const den3 = Fr.sub(x, roots[i]);
+        
+                toInverse[["LiS1_" + (i + 1)]] = Fr.mul(Fr.mul(den1, den2), den3);
 
-                den = Fr.mul(den, Fr.sub(roots.S1.h1w4[i], roots.S1.h1w4[idx]));
             }
-            return den;
+        
+            return Li;
         }
 
-        function computeLiS2(i) {
-            // Compute L_i^{(S1)}(y)
-            let idx = i;
-            let den = Fr.one;
-            for (let j = 0; j < 5; j++) {
-                idx = (idx + 1) % 6;
-
-                const root1 = i < 3 ? roots.S2.h2w3[i] : roots.S2.h3w3[i - 3];
-                const root2 = idx < 3 ? roots.S2.h2w3[idx] : roots.S2.h3w3[idx - 3];
-                den = Fr.mul(den, Fr.sub(root1, root2));
+        function computeLiS2(toInverse, S2, S2p, value, xi, xiw, curve) {
+            const Fr = curve.Fr;
+        
+            const Li = [];
+        
+            const _3h2 = Fr.mul(Fr.e(3), S2[0]);
+            const xisubxiw = Fr.sub(xi, xiw);
+            let den1 = Fr.mul(_3h2, xisubxiw);
+            for (let i = 0; i < 3; i++) {
+                const den2 = S2[2 * i % 3];
+                const den3 = Fr.sub(value, S2[i]);
+        
+                toInverse[["LiS2_" + (i + 1)]] = Fr.mul(den1,Fr.mul(den2, den3));
+                
             }
-            return den;
+        
+            const _3h3 = Fr.mul(Fr.e(3), S2p[0]);
+            const xiwsubxi = Fr.sub(xiw, xi);
+            den1 = Fr.mul(_3h3, xiwsubxi);
+            for (let i = 0; i < 3; i++) {
+                const den2 = S2p[2 * i % 3];
+                const den3 = Fr.sub(value, S2p[i]);
+        
+                toInverse[["LiS2_" + (i + 1 + 3)]] = Fr.mul(den1,Fr.mul(den2, den3));    
+            }
+        
+            return Li;
         }
     }
 }

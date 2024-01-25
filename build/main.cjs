@@ -13,7 +13,6 @@ var fs = require('fs');
 var fs$1 = require('node:fs');
 var r1csfile = require('r1csfile');
 var ejs = require('ejs');
-require('bfj');
 var jsSha3 = require('js-sha3');
 
 function _interopDefaultLegacy (e) { return e && typeof e === 'object' && 'default' in e ? e : { 'default': e }; }
@@ -46,11 +45,23 @@ var fs__namespace$1 = /*#__PURE__*/_interopNamespace(fs$1);
 var ejs__default = /*#__PURE__*/_interopDefaultLegacy(ejs);
 var jsSha3__default = /*#__PURE__*/_interopDefaultLegacy(jsSha3);
 
-ffjavascript.Scalar.e("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001", 16);
-ffjavascript.Scalar.e("21888242871839275222246405745257275088548364400416034343698204186575808495617");
+const bls12381r$1 = ffjavascript.Scalar.e("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001", 16);
+const bn128r$1 = ffjavascript.Scalar.e("21888242871839275222246405745257275088548364400416034343698204186575808495617");
 
 const bls12381q = ffjavascript.Scalar.e("1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab", 16);
 const bn128q = ffjavascript.Scalar.e("21888242871839275222246405745257275088696311157297823662689037894645226208583");
+
+async function getCurveFromR(r) {
+    let curve;
+    if (ffjavascript.Scalar.eq(r, bn128r$1)) {
+        curve = await ffjavascript.buildBn128();
+    } else if (ffjavascript.Scalar.eq(r, bls12381r$1)) {
+        curve = await ffjavascript.buildBls12381();
+    } else {
+        throw new Error(`Curve not supported: ${ffjavascript.Scalar.toString(r)}`);
+    }
+    return curve;
+}
 
 async function getCurveFromQ(q) {
     let curve;
@@ -176,26 +187,53 @@ function askEntropy() {
     }
 }
 
+function getRandomBytes(n) {
+    let array = new Uint8Array(n);
+    if (process.browser) { // Supported
+        globalThis.crypto.getRandomValues(array);
+    } else { // NodeJS
+        crypto__default["default"].randomFillSync(array);
+    }
+    return array;
+}
+
+async function sha256digest(data) {
+    if (process.browser) { // Supported
+        const buffer = await globalThis.crypto.subtle.digest("SHA-256", data.buffer);
+        return new Uint8Array(buffer);
+    } else { // NodeJS
+        return crypto__default["default"].createHash("sha256").update(data).digest();
+    }
+}
+
+/**
+ * @param {Uint8Array} data
+ * @param {number} offset
+ */
+function readUInt32BE(data, offset) {
+    return new DataView(data.buffer).getUint32(offset, false);
+}
+
 async function getRandomRng(entropy) {
     // Generate a random Rng
     while (!entropy) {
         entropy = await askEntropy();
     }
     const hasher = Blake2b__default["default"](64);
-    hasher.update(crypto__default["default"].randomBytes(64));
+    hasher.update(getRandomBytes(64));
     const enc = new TextEncoder(); // always utf-8
     hasher.update(enc.encode(entropy));
-    const hash = Buffer.from(hasher.digest());
+    const hash = hasher.digest();
 
     const seed = [];
     for (let i=0;i<8;i++) {
-        seed[i] = hash.readUInt32BE(i*4);
+        seed[i] = readUInt32BE(hash, i*4);
     }
     const rng = new ffjavascript.ChaCha(seed);
     return rng;
 }
 
-function rngFromBeaconParams(beaconHash, numIterationsExp) {
+async function rngFromBeaconParams(beaconHash, numIterationsExp) {
     let nIterationsInner;
     let nIterationsOuter;
     if (numIterationsExp<32) {
@@ -209,7 +247,7 @@ function rngFromBeaconParams(beaconHash, numIterationsExp) {
     let curHash = beaconHash;
     for (let i=0; i<nIterationsOuter; i++) {
         for (let j=0; j<nIterationsInner; j++) {
-            curHash = crypto__default["default"].createHash("sha256").update(curHash).digest();
+            curHash = await sha256digest(curHash);
         }
     }
 
@@ -257,6 +295,8 @@ function stringifyBigIntsWithField(Fr, o) {
     }
 }
 
+const HEADER_ZKEY_SECTION = 1;
+
 const GROTH16_PROTOCOL_ID = 1;
 const PLONK_PROTOCOL_ID = 2;
 const FFLONK_PROTOCOL_ID = 10;
@@ -280,7 +320,28 @@ const FFLONK_PROTOCOL_ID = 10;
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
 
+// FFlonk constants
+const FF_T_POL_DEG_MIN = 3;
+
+// ZKEY constants
+const ZKEY_FF_NSECTIONS = 17;
+
 const ZKEY_FF_HEADER_SECTION = 2;
+const ZKEY_FF_ADDITIONS_SECTION = 3;
+const ZKEY_FF_A_MAP_SECTION = 4;
+const ZKEY_FF_B_MAP_SECTION = 5;
+const ZKEY_FF_C_MAP_SECTION = 6;
+const ZKEY_FF_QL_SECTION = 7;
+const ZKEY_FF_QR_SECTION = 8;
+const ZKEY_FF_QM_SECTION = 9;
+const ZKEY_FF_QO_SECTION = 10;
+const ZKEY_FF_QC_SECTION = 11;
+const ZKEY_FF_SIGMA1_SECTION = 12;
+const ZKEY_FF_SIGMA2_SECTION = 13;
+const ZKEY_FF_SIGMA3_SECTION = 14;
+const ZKEY_FF_LAGRANGE_SECTION = 15;
+const ZKEY_FF_PTAU_SECTION = 16;
+const ZKEY_FF_C0_SECTION = 17;
 
 /*
     Copyright 2018 0KIMS association.
@@ -439,7 +500,7 @@ async function readHeaderPlonk(fd, sections, toObject) {
     zkey.domainSize = await fd.readULE32();
     zkey.power = log2(zkey.domainSize);
     zkey.nAdditions = await fd.readULE32();
-    zkey.nConstrains = await fd.readULE32();
+    zkey.nConstraints = await fd.readULE32();
     zkey.k1 = await fd.read(n8r);
     zkey.k2 = await fd.read(n8r);
 
@@ -829,7 +890,7 @@ async function read(fileName) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const {stringifyBigInts: stringifyBigInts$3} = ffjavascript.utils;
+const {stringifyBigInts: stringifyBigInts$4} = ffjavascript.utils;
 
 async function groth16Prove(zkeyFileName, witnessFileName, logger) {
     const {fd: fdWtns, sections: sectionsWtns} = await binFileUtils__namespace.readBinFile(witnessFileName, "wtns", 2, 1<<25, 1<<23);
@@ -943,8 +1004,8 @@ async function groth16Prove(zkeyFileName, witnessFileName, logger) {
     await fdZKey.close();
     await fdWtns.close();
 
-    proof = stringifyBigInts$3(proof);
-    publicSignals = stringifyBigInts$3(publicSignals);
+    proof = stringifyBigInts$4(proof);
+    publicSignals = stringifyBigInts$4(publicSignals);
 
     return {proof, publicSignals};
 }
@@ -1197,10 +1258,10 @@ async function joinABC(curve, zkey, a, b, c, logger) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const { unstringifyBigInts: unstringifyBigInts$8} = ffjavascript.utils;
+const { unstringifyBigInts: unstringifyBigInts$b} = ffjavascript.utils;
 
 async function wtnsCalculate(_input, wasmFileName, wtnsFileName, options) {
-    const input = unstringifyBigInts$8(_input);
+    const input = unstringifyBigInts$b(_input);
 
     const fdWasm = await fastFile__namespace.readExisting(wasmFileName);
     const wasm = await fdWasm.read(fdWasm.totalSize);
@@ -1242,10 +1303,10 @@ async function wtnsCalculate(_input, wasmFileName, wtnsFileName, options) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const {unstringifyBigInts: unstringifyBigInts$7} = ffjavascript.utils;
+const {unstringifyBigInts: unstringifyBigInts$a} = ffjavascript.utils;
 
 async function groth16FullProve(_input, wasmFile, zkeyFileName, logger) {
-    const input = unstringifyBigInts$7(_input);
+    const input = unstringifyBigInts$a(_input);
 
     const wtns= {
         type: "mem"
@@ -1272,7 +1333,7 @@ async function groth16FullProve(_input, wasmFile, zkeyFileName, logger) {
     You should have received a copy of the GNU General Public License along with
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
-const {unstringifyBigInts: unstringifyBigInts$6} = ffjavascript.utils;
+const {unstringifyBigInts: unstringifyBigInts$9} = ffjavascript.utils;
 
 async function groth16Verify(_vk_verifier, _publicSignals, _proof, logger) {
 /*
@@ -1282,15 +1343,20 @@ async function groth16Verify(_vk_verifier, _publicSignals, _proof, logger) {
     }
 */
 
-    const vk_verifier = unstringifyBigInts$6(_vk_verifier);
-    const proof = unstringifyBigInts$6(_proof);
-    const publicSignals = unstringifyBigInts$6(_publicSignals);
+    const vk_verifier = unstringifyBigInts$9(_vk_verifier);
+    const proof = unstringifyBigInts$9(_proof);
+    const publicSignals = unstringifyBigInts$9(_publicSignals);
 
     const curve = await getCurveFromName(vk_verifier.curve);
 
     const IC0 = curve.G1.fromObject(vk_verifier.IC[0]);
     const IC = new Uint8Array(curve.G1.F.n8*2 * publicSignals.length);
     const w = new Uint8Array(curve.Fr.n8 * publicSignals.length);
+
+    if (!publicInputsAreValid$1(curve, publicSignals)) {
+        if (logger) logger.error("Public inputs are not valid.");
+        return false;
+    }
 
     for (let i=0; i<publicSignals.length; i++) {
         const buffP = curve.G1.fromObject(vk_verifier.IC[i+1]);
@@ -1304,6 +1370,11 @@ async function groth16Verify(_vk_verifier, _publicSignals, _proof, logger) {
     const pi_a = curve.G1.fromObject(proof.pi_a);
     const pi_b = curve.G2.fromObject(proof.pi_b);
     const pi_c = curve.G1.fromObject(proof.pi_c);
+
+    if (!isWellConstructed$1(curve, {pi_a, pi_b, pi_c})) {
+        if(logger) logger.error("Proof commitments are not valid.");
+        return false;
+    }
 
     const vk_gamma_2 = curve.G2.fromObject(vk_verifier.vk_gamma_2);
     const vk_delta_2 = curve.G2.fromObject(vk_verifier.vk_delta_2);
@@ -1327,6 +1398,24 @@ async function groth16Verify(_vk_verifier, _publicSignals, _proof, logger) {
     return true;
 }
 
+function isWellConstructed$1(curve, proof) {
+    const G1 = curve.G1;
+    const G2 = curve.G2;
+
+    return G1.isValid(proof.pi_a)
+        && G2.isValid(proof.pi_b)
+        && G1.isValid(proof.pi_c);
+}
+
+function publicInputsAreValid$1(curve, publicInputs) {
+    for(let i = 0; i < publicInputs.length; i++) {
+        if(!ffjavascript.Scalar.lt(publicInputs[i], curve.r)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /*
     Copyright 2018 0KIMS association.
 
@@ -1345,9 +1434,9 @@ async function groth16Verify(_vk_verifier, _publicSignals, _proof, logger) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const { unstringifyBigInts: unstringifyBigInts$5} = ffjavascript.utils;
+const { unstringifyBigInts: unstringifyBigInts$8} = ffjavascript.utils;
 
-function p256$1(n) {
+function p256$2(n) {
     let nstr = n.toString(16);
     while (nstr.length < 64) nstr = "0"+nstr;
     nstr = `"0x${nstr}"`;
@@ -1355,19 +1444,19 @@ function p256$1(n) {
 }
 
 async function groth16ExportSolidityCallData(_proof, _pub) {
-    const proof = unstringifyBigInts$5(_proof);
-    const pub = unstringifyBigInts$5(_pub);
+    const proof = unstringifyBigInts$8(_proof);
+    const pub = unstringifyBigInts$8(_pub);
 
     let inputs = "";
     for (let i=0; i<pub.length; i++) {
         if (inputs != "") inputs = inputs + ",";
-        inputs = inputs + p256$1(pub[i]);
+        inputs = inputs + p256$2(pub[i]);
     }
 
     let S;
-    S=`[${p256$1(proof.pi_a[0])}, ${p256$1(proof.pi_a[1])}],` +
-        `[[${p256$1(proof.pi_b[0][1])}, ${p256$1(proof.pi_b[0][0])}],[${p256$1(proof.pi_b[1][1])}, ${p256$1(proof.pi_b[1][0])}]],` +
-        `[${p256$1(proof.pi_c[0])}, ${p256$1(proof.pi_c[1])}],` +
+    S=`[${p256$2(proof.pi_a[0])}, ${p256$2(proof.pi_a[1])}],` +
+        `[[${p256$2(proof.pi_b[0][1])}, ${p256$2(proof.pi_b[0][0])}],[${p256$2(proof.pi_b[1][1])}, ${p256$2(proof.pi_b[1][0])}]],` +
+        `[${p256$2(proof.pi_c[0])}, ${p256$2(proof.pi_c[1])}],` +
         `[${inputs}]`;
 
     return S;
@@ -1826,9 +1915,9 @@ function calculateFirstChallengeHash(curve, power, logger) {
 }
 
 
-function keyFromBeacon(curve, challengeHash, beaconHash, numIterationsExp) {
+async function keyFromBeacon(curve, challengeHash, beaconHash, numIterationsExp) {
 
-    const rng = rngFromBeaconParams(beaconHash, numIterationsExp);
+    const rng = await rngFromBeaconParams(beaconHash, numIterationsExp);
 
     const key = createPTauKey(curve, challengeHash, rng);
 
@@ -2471,7 +2560,7 @@ const sameRatio$1 = sameRatio$2;
 async function verifyContribution(curve, cur, prev, logger) {
     let sr;
     if (cur.type == 1) {    // Verify the beacon.
-        const beaconKey = keyFromBeacon(curve, prev.nextChallenge, cur.beaconHash, cur.numIterationsExp);
+        const beaconKey = await keyFromBeacon(curve, prev.nextChallenge, cur.beaconHash, cur.numIterationsExp);
 
         if (!curve.G1.eq(cur.key.tau.g1_s, beaconKey.tau.g1_s)) {
             if (logger) logger.error(`BEACON key (tauG1_s) is not generated correctly in challenge #${cur.id}  ${cur.name || ""}` );
@@ -2814,13 +2903,11 @@ async function verify(tauFilename, logger) {
             const basesU = await G.batchLEMtoU(bases);
             nextContributionHasher.update(basesU);
 
-            const scalars = new Uint8Array(4*(n-1));
-            crypto__default["default"].randomFillSync(scalars);
-
+            const scalars = getRandomBytes(4*(n-1));
 
             if (i>0) {
                 const firstBase = G.fromRprLEM(bases, 0);
-                const r = crypto__default["default"].randomBytes(4).readUInt32BE(0, true);
+                const r = readUInt32BE(getRandomBytes(4), 0);
 
                 R1 = G.add(R1, G.timesScalar(lastBase, r));
                 R2 = G.add(R2, G.timesScalar(firstBase, r));
@@ -2861,7 +2948,7 @@ async function verify(tauFilename, logger) {
 
         const seed= new Array(8);
         for (let i=0; i<8; i++) {
-            seed[i] = crypto__default["default"].randomBytes(4).readUInt32BE(0, true);
+            seed[i] = readUInt32BE(getRandomBytes(4), 0);
         }
 
         for (let p=0; p<= power; p ++) {
@@ -3183,7 +3270,7 @@ async function beacon$1(oldPtauFilename, newPTauFilename, name,  beaconHashStr,n
         lastChallengeHash = calculateFirstChallengeHash(curve, power, logger);
     }
 
-    curContribution.key = keyFromBeacon(curve, lastChallengeHash, beaconHash, numIterationsExp);
+    curContribution.key = await keyFromBeacon(curve, lastChallengeHash, beaconHash, numIterationsExp);
 
     const responseHasher = new Blake2b__default["default"](64);
     responseHasher.update(lastChallengeHash);
@@ -4353,12 +4440,12 @@ async function loadSymbols(symFileName) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const {unstringifyBigInts: unstringifyBigInts$4} = ffjavascript.utils;
+const {unstringifyBigInts: unstringifyBigInts$7} = ffjavascript.utils;
 
 
 async function wtnsDebug(_input, wasmFileName, wtnsFileName, symName, options, logger) {
 
-    const input = unstringifyBigInts$4(_input);
+    const input = unstringifyBigInts$7(_input);
 
     const fdWasm = await fastFile__namespace.readExisting(wasmFileName);
     const wasm = await fdWasm.read(fdWasm.totalSize);
@@ -4449,11 +4536,157 @@ async function wtnsExportJson(wtnsFileName) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
+async function wtnsCheck(r1csFilename, wtnsFilename, logger) {
+
+    if (logger) logger.info("WITNESS CHECKING STARTED");
+
+    // Read r1cs file
+    if (logger) logger.info("> Reading r1cs file");
+    const {
+        fd: fdR1cs,
+        sections: sectionsR1cs
+    } = await binFileUtils__namespace.readBinFile(r1csFilename, "r1cs", 1, 1 << 22, 1 << 24);
+    const r1cs = await r1csfile.readR1csFd(fdR1cs, sectionsR1cs, { loadConstraints: false, loadCustomGates: false });
+
+    // Read witness file
+    if (logger) logger.info("> Reading witness file");
+    const {
+        fd: fdWtns,
+        sections: wtnsSections
+    } = await binFileUtils__namespace.readBinFile(wtnsFilename, "wtns", 2, 1 << 22, 1 << 24);
+    const wtnsHeader = await readHeader(fdWtns, wtnsSections);
+
+    if (!ffjavascript.Scalar.eq(r1cs.prime, wtnsHeader.q)) {
+        throw new Error("Curve of the witness does not match the curve of the proving key");
+    }
+
+    const buffWitness = await binFileUtils__namespace.readSection(fdWtns, wtnsSections, 2);
+    await fdWtns.close();
+
+    const curve = await getCurveFromR(r1cs.prime);
+    const Fr = curve.Fr;
+    const sFr = Fr.n8;
+
+    const bR1cs = await binFileUtils__namespace.readSection(fdR1cs, sectionsR1cs, 2);
+
+    if (logger) {
+        logger.info("----------------------------");
+        logger.info("  WITNESS CHECK");
+        logger.info(`  Curve:          ${r1cs.curve.name}`);
+        logger.info(`  Vars (wires):   ${r1cs.nVars}`);
+        logger.info(`  Ouputs:         ${r1cs.nOutputs}`);
+        logger.info(`  Public Inputs:  ${r1cs.nPubInputs}`);
+        logger.info(`  Private Inputs: ${r1cs.nPrvInputs}`);
+        logger.info(`  Labels:         ${r1cs.nLabels}`);
+        logger.info(`  Constraints:    ${r1cs.nConstraints}`);
+        logger.info(`  Custom Gates:   ${r1cs.useCustomGates}`);
+        logger.info("----------------------------");
+    }
+
+    if (logger) logger.info("> Checking witness correctness");
+
+    let bR1csPos = 0;
+    let res = true;
+    for (let i = 0; i < r1cs.nConstraints; i++) {
+        if ((logger) && (i !== 0) && (i % 500000 === 0)) {
+            logger.info(`··· processing r1cs constraints ${i}/${r1cs.nConstraints}`);
+        }
+
+        //Read the three linear combinations of the constraint where A * B - C = 0
+        const lcA = readLC();
+        const lcB = readLC();
+        const lcC = readLC();
+
+        // Evaluate the linear combinations
+        const evalA = EvaluateLinearCombination(lcA);
+        const evalB = EvaluateLinearCombination(lcB);
+        const evalC = EvaluateLinearCombination(lcC);
+
+        // Check that A * B - C == 0
+        if (!Fr.eq(Fr.sub(Fr.mul(evalA, evalB), evalC), Fr.zero)) {
+            logger.warn("··· aborting checking process at constraint " + i);
+            res = false;
+            break;
+        }
+    }
+
+    fdR1cs.close();
+
+    if (logger) {
+        if (res) {
+            logger.info("WITNESS IS CORRECT");
+            logger.info("WITNESS CHECKING FINISHED SUCCESSFULLY");
+        } else {
+            logger.warn("WITNESS IS NOT CORRECT");
+            logger.warn("WITNESS CHECKING FINISHED UNSUCCESSFULLY");
+        }
+    }
+
+    return res;
+
+    function EvaluateLinearCombination(lc) {
+        let res = Fr.zero;
+
+        const keys = Object.keys(lc);
+        keys.forEach((signalId) => {
+            const signalValue = getWitnessValue(signalId);
+            const signalFactor = lc[signalId];
+
+            res = Fr.add(res, Fr.mul(signalValue, signalFactor));
+        });
+
+        return res;
+    }
+
+    function readLC() {
+        const lc = {};
+
+        const buffUL32 = bR1cs.slice(bR1csPos, bR1csPos + 4);
+        bR1csPos += 4;
+        const buffUL32V = new DataView(buffUL32.buffer);
+        const nIdx = buffUL32V.getUint32(0, true);
+
+        const buff = bR1cs.slice(bR1csPos, bR1csPos + (4 + r1cs.n8) * nIdx);
+        bR1csPos += (4 + r1cs.n8) * nIdx;
+        const buffV = new DataView(buff.buffer);
+        for (let i = 0; i < nIdx; i++) {
+            const idx = buffV.getUint32(i * (4 + r1cs.n8), true);
+            const val = r1cs.F.fromRprLE(buff, i * (4 + r1cs.n8) + 4);
+            lc[idx] = val;
+        }
+        return lc;
+    }
+
+    function getWitnessValue(signalId) {
+        return Fr.fromRprLE(buffWitness.slice(signalId * sFr, signalId * sFr + sFr));
+    }
+}
+
+/*
+    Copyright 2018 0KIMS association.
+
+    This file is part of snarkJS.
+
+    snarkJS is a free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    snarkJS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+    License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+*/
+
 var wtns = /*#__PURE__*/Object.freeze({
     __proto__: null,
     calculate: wtnsCalculate,
     debug: wtnsDebug,
-    exportJson: wtnsExportJson
+    exportJson: wtnsExportJson,
+    check: wtnsCheck
 });
 
 /*
@@ -5544,7 +5777,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
         }
 
         if (c.type == 1) {
-            const rng = rngFromBeaconParams(c.beaconHash, c.numIterationsExp);
+            const rng = await rngFromBeaconParams(c.beaconHash, c.numIterationsExp);
             const expected_prvKey = curve.Fr.fromRng(rng);
             const expected_g1_s = curve.G1.toAffine(curve.G1.fromRng(rng));
             const expected_g1_sx = curve.G1.toAffine(curve.G1.timesFr(expected_g1_s, expected_prvKey));
@@ -5720,9 +5953,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
             const bases1 = await fd1.read(n*sG);
             const bases2 = await fd2.read(n*sG);
 
-            const scalars = new Uint8Array(4*n);
-            crypto__default["default"].randomFillSync(scalars);
-
+            const scalars = getRandomBytes(4*n);
 
             const r1 = await G.multiExpAffine(bases1, scalars);
             const r2 = await G.multiExpAffine(bases2, scalars);
@@ -5753,7 +5984,7 @@ async function phase2verifyFromInit(initFileName, pTauFileName, zkeyFileName, lo
 
         const seed= new Array(8);
         for (let i=0; i<8; i++) {
-            seed[i] = crypto__default["default"].randomBytes(4).readUInt32BE(0, true);
+            seed[i] = readUInt32BE(getRandomBytes(4), 0);
         }
         const rng = new ffjavascript.ChaCha(seed);
         for (let i=0; i<zkey.domainSize-1; i++) {   // Note that last one is zero
@@ -6346,7 +6577,7 @@ async function bellmanContribute(curve, challengeFilename, responesFileName, ent
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-const {stringifyBigInts: stringifyBigInts$2} = ffjavascript.utils;
+const {stringifyBigInts: stringifyBigInts$3} = ffjavascript.utils;
 
 async function zkeyExportVerificationKey(zkeyName, logger) {
     if (logger) logger.info("EXPORT VERIFICATION KEY STARTED");
@@ -6406,7 +6637,7 @@ async function groth16Vk(zkey, fd, sections) {
     }
     await binFileUtils__namespace.endReadSection(fd);
 
-    vKey = stringifyBigInts$2(vKey);
+    vKey = stringifyBigInts$3(vKey);
 
     return vKey;
 }
@@ -6438,7 +6669,7 @@ async function plonkVk(zkey) {
         w: curve.Fr.toObject(curve.Fr.w[zkey.power])
     };
 
-    vKey = stringifyBigInts$2(vKey);
+    vKey = stringifyBigInts$3(vKey);
 
     return vKey;
 }
@@ -6467,7 +6698,7 @@ async function exportFFlonkVk(zkey, logger) {
         C0: curve.G1.toObject(zkey.C0),
     };
 
-    return stringifyBigInts$2(vKey);
+    return stringifyBigInts$3(vKey);
 }
 
 /*
@@ -6489,7 +6720,7 @@ async function exportFFlonkVk(zkey, logger) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
-const {unstringifyBigInts: unstringifyBigInts$3, stringifyBigInts: stringifyBigInts$1} = ffjavascript.utils;
+const {unstringifyBigInts: unstringifyBigInts$6, stringifyBigInts: stringifyBigInts$2} = ffjavascript.utils;
 
 async function fflonkExportSolidityVerifier(vk, templates, logger) {
     if (logger) logger.info("FFLONK EXPORT SOLIDITY VERIFIER STARTED");
@@ -6519,35 +6750,14 @@ async function fflonkExportSolidityVerifier(vk, templates, logger) {
     return ejs__default["default"].render(template, vk);
 
     function fromVkey(str) {
-        const val = unstringifyBigInts$3(str);
+        const val = unstringifyBigInts$6(str);
         return curve.Fr.fromObject(val);
     }
 
     function toVkey(val) {
         const str = curve.Fr.toObject(val);
-        return stringifyBigInts$1(str);
+        return stringifyBigInts$2(str);
     }
-}
-
-/*
-    This file is part of snarkjs.
-
-    snarkjs is a free software: you can redistribute it and/or
-    modify it under the terms of the GNU General Public License as published by the
-    Free Software Foundation, either version 3 of the License, or (at your option)
-    any later version.
-
-    snarkjs is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-    more details.
-
-    You should have received a copy of the GNU General Public License along with
-    snarkjs. If not, see <https://www.gnu.org/licenses/>.
-*/
-
-async function fflonkExportSolidityVerifierCmd(vk, templates, logger) {
-    return fflonkExportSolidityVerifier(vk, templates, logger);
 }
 
 // Not ready yet
@@ -6558,7 +6768,7 @@ async function exportSolidityVerifier(zKeyName, templates, logger) {
     const verificationKey = await zkeyExportVerificationKey(zKeyName, logger);
 
     if ("fflonk" === verificationKey.protocol) {
-        return fflonkExportSolidityVerifierCmd(verificationKey, templates, logger);
+        return fflonkExportSolidityVerifier(verificationKey, templates, logger);
     }
 
     let template = templates[verificationKey.protocol];
@@ -7092,6 +7302,1369 @@ async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
 }
 
 /*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+class Proof {
+    constructor(curve, logger) {
+        this.curve = curve;
+        this.logger = logger;
+
+        this.resetProof();
+    }
+
+    resetProof() {
+        this.polynomials = {};
+        this.evaluations = {};
+    }
+
+    addPolynomial(key, polynomial) {
+        if (key in this.polynomials) {
+            this.logger.warn(`proof: polynomial.${key} already exist in proof`);
+        }
+        this.polynomials[key] = polynomial;
+    }
+
+    getPolynomial(key) {
+        if (!(key in this.polynomials)) {
+            this.logger.warn(`proof: polynomial ${key} does not exist in proof`);
+        }
+        return this.polynomials[key];
+    }
+
+    addEvaluation(key, evaluation) {
+        if (key in this.evaluations) {
+            this.logger.warn(`proof: evaluations.${key} already exist in proof`);
+        }
+        this.evaluations[key] = evaluation;
+    }
+
+    getEvaluation(key) {
+        if (!(key in this.evaluations)) {
+            this.logger.warn(`proof: evaluation ${key} does not exist in proof`);
+        }
+        return this.evaluations[key];
+    }
+
+    toObjectProof(splitFields = true) {
+        let res = splitFields ? {polynomials: {}, evaluations: {}} : {};
+
+        Object.keys(this.polynomials).forEach(key => {
+            const value = this.curve.G1.toObject(this.polynomials[key]);
+            if(splitFields) {
+                res.polynomials[key] = value;
+            } else {
+                res[key] = value;
+            }
+        });
+
+        Object.keys(this.evaluations).forEach(key => {
+            const value = this.curve.Fr.toObject(this.evaluations[key]);
+            if(splitFields) {
+                res.evaluations[key] = value;
+            } else {
+                res[key] = value;
+            }
+        });
+
+        return res;
+    }
+
+    fromObjectProof(objectProof) {
+        this.resetProof();
+
+        Object.keys(objectProof.polynomials).forEach(key => {
+            this.polynomials[key] = this.curve.G1.fromObject(objectProof.polynomials[key]);
+        });
+
+        Object.keys(objectProof.evaluations).forEach(key => {
+            this.evaluations[key] = this.curve.Fr.fromObject(objectProof.evaluations[key]);
+        });
+    }
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+const { keccak256 } = jsSha3__default["default"];
+
+const POLYNOMIAL = 0;
+const SCALAR = 1;
+
+class Keccak256Transcript {
+    constructor(curve) {
+        this.G1 = curve.G1;
+        this.Fr = curve.Fr;
+
+        this.reset();
+    }
+
+    reset() {
+        this.data = [];
+    }
+
+    addPolCommitment(polynomialCommitment) {
+        this.data.push({type: POLYNOMIAL, data: polynomialCommitment});
+    }
+
+    addScalar(scalar) {
+        this.data.push({type: SCALAR, data: scalar});
+    }
+
+    getChallenge() {
+        if(0 === this.data.length) {
+            throw new Error("Keccak256Transcript: No data to generate a transcript");
+        }
+
+        let nPolynomials = 0;
+        let nScalars = 0;
+
+        this.data.forEach(element => POLYNOMIAL === element.type ? nPolynomials++ : nScalars++);
+
+        let buffer = new Uint8Array(nScalars * this.Fr.n8 + nPolynomials * this.G1.F.n8 * 2);
+        let offset = 0;
+
+        for (let i = 0; i < this.data.length; i++) {
+            if (POLYNOMIAL === this.data[i].type) {
+                this.G1.toRprUncompressed(buffer, offset, this.data[i].data);
+                offset += this.G1.F.n8 * 2;
+            } else {
+                this.Fr.toRprBE(buffer, offset, this.data[i].data);
+                offset += this.Fr.n8;
+            }
+        }
+
+        const value = ffjavascript.Scalar.fromRprBE(new Uint8Array(keccak256.arrayBuffer(buffer)));
+        return this.Fr.e(value);
+    }
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+class MulZ {
+    static getZ1(Fr) {
+        return [
+            Fr.zero,
+            Fr.add(Fr.e(-1), Fr.w[2]),
+            Fr.e(-2),
+            Fr.sub(Fr.e(-1), Fr.w[2]),
+        ];
+    }
+
+    static getZ2(Fr) {
+        return [
+            Fr.zero,
+            Fr.add(Fr.zero, Fr.mul(Fr.e(-2), Fr.w[2])),
+            Fr.e(4),
+            Fr.sub(Fr.zero, Fr.mul(Fr.e(-2), Fr.w[2])),
+        ];
+    }
+
+    static getZ3(Fr) {
+        return [
+            Fr.zero,
+            Fr.add(Fr.e(2), Fr.mul(Fr.e(2), Fr.w[2])),
+            Fr.e(-8),
+            Fr.sub(Fr.e(2), Fr.mul(Fr.e(2), Fr.w[2])),
+        ];
+
+    }
+
+    static mul2(a, b, ap, bp, p, Fr) {
+        const Z1 = this.getZ1(Fr);
+        let r, rz;
+
+        const a_b = Fr.mul(a, b);
+        const a_bp = Fr.mul(a, bp);
+        const ap_b = Fr.mul(ap, b);
+        const ap_bp = Fr.mul(ap, bp);
+
+        r = a_b;
+
+        let a0 = Fr.add(a_bp, ap_b);
+
+        let a1 = ap_bp;
+
+        rz = a0;
+        if (p) {
+            rz = Fr.add(rz, Fr.mul(Z1[p], a1));
+        }
+
+        return [r, rz];
+    }
+
+    static mul3(a, b, c, ap, bp, cp, p, Fr) {
+        const Z1 = this.getZ1(Fr);
+        const Z2 = this.getZ2(Fr);
+        let r, rz;
+
+        const a_b = Fr.mul(a, b);
+        const a_bp = Fr.mul(a, bp);
+        const ap_b = Fr.mul(ap, b);
+        const ap_bp = Fr.mul(ap, bp);
+
+        r = Fr.mul(a_b, c);
+
+        let a0 = Fr.mul(ap_b, c);
+        a0 = Fr.add(a0, Fr.mul(a_bp, c));
+        a0 = Fr.add(a0, Fr.mul(a_b, cp));
+
+        let a1 = Fr.mul(ap_bp, c);
+        a1 = Fr.add(a1, Fr.mul(a_bp, cp));
+        a1 = Fr.add(a1, Fr.mul(ap_b, cp));
+
+        rz = a0;
+        if (p) {
+            const a2 = Fr.mul(ap_bp, cp);
+            rz = Fr.add(rz, Fr.mul(Z1[p], a1));
+            rz = Fr.add(rz, Fr.mul(Z2[p], a2));
+        }
+
+        return [r, rz];
+    }
+
+    static mul4(a, b, c, d, ap, bp, cp, dp, p, Fr) {
+        const Z1 = this.getZ1(Fr);
+        const Z2 = this.getZ2(Fr);
+        const Z3 = this.getZ3(Fr);
+
+        let r, rz;
+
+        const a_b = Fr.mul(a, b);
+        const a_bp = Fr.mul(a, bp);
+        const ap_b = Fr.mul(ap, b);
+        const ap_bp = Fr.mul(ap, bp);
+
+        const c_d = Fr.mul(c, d);
+        const c_dp = Fr.mul(c, dp);
+        const cp_d = Fr.mul(cp, d);
+        const cp_dp = Fr.mul(cp, dp);
+
+        r = Fr.mul(a_b, c_d);
+
+        let a0 = Fr.mul(ap_b, c_d);
+        a0 = Fr.add(a0, Fr.mul(a_bp, c_d));
+        a0 = Fr.add(a0, Fr.mul(a_b, cp_d));
+        a0 = Fr.add(a0, Fr.mul(a_b, c_dp));
+
+        let a1 = Fr.mul(ap_bp, c_d);
+        a1 = Fr.add(a1, Fr.mul(ap_b, cp_d));
+        a1 = Fr.add(a1, Fr.mul(ap_b, c_dp));
+        a1 = Fr.add(a1, Fr.mul(a_bp, cp_d));
+        a1 = Fr.add(a1, Fr.mul(a_bp, c_dp));
+        a1 = Fr.add(a1, Fr.mul(a_b, cp_dp));
+
+        let a2 = Fr.mul(a_bp, cp_dp);
+        a2 = Fr.add(a2, Fr.mul(ap_b, cp_dp));
+        a2 = Fr.add(a2, Fr.mul(ap_bp, c_dp));
+        a2 = Fr.add(a2, Fr.mul(ap_bp, cp_d));
+
+        let a3 = Fr.mul(ap_bp, cp_dp);
+
+        rz = a0;
+        if (p) {
+            rz = Fr.add(rz, Fr.mul(Z1[p], a1));
+            rz = Fr.add(rz, Fr.mul(Z2[p], a2));
+            rz = Fr.add(rz, Fr.mul(Z3[p], a3));
+        }
+
+        return [r, rz];
+    }
+}
+
+const ZKEY_PL_ADDITIONS_SECTION = 3;
+const ZKEY_PL_A_MAP_SECTION = 4;
+const ZKEY_PL_B_MAP_SECTION = 5;
+const ZKEY_PL_C_MAP_SECTION = 6;
+const ZKEY_PL_QM_SECTION = 7;
+const ZKEY_PL_QL_SECTION = 8;
+const ZKEY_PL_QR_SECTION = 9;
+const ZKEY_PL_QO_SECTION = 10;
+const ZKEY_PL_QC_SECTION = 11;
+const ZKEY_PL_SIGMA_SECTION = 12;
+const ZKEY_PL_LAGRANGE_SECTION = 13;
+const ZKEY_PL_PTAU_SECTION = 14;
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+class Polynomial {
+    constructor(coefficients, curve, logger) {
+        this.coef = coefficients;
+        this.curve = curve;
+        this.Fr = curve.Fr;
+        this.G1 = curve.G1;
+        this.logger = logger;
+    }
+
+    static async fromEvaluations(buffer, curve, logger) {
+        let coefficients = await curve.Fr.ifft(buffer);
+
+        return new Polynomial(coefficients, curve, logger);
+    }
+
+    static fromCoefficientsArray(array, curve, logger) {
+        const Fr = curve.Fr;
+        let buff = array.length > 2 << 14 ?
+            new ffjavascript.BigBuffer(array.length * Fr.n8) : new Uint8Array(array.length * Fr.n8);
+        for (let i = 0; i < array.length; i++) buff.set(array[i], i * Fr.n8);
+
+        return new Polynomial(buff, curve, logger);
+    }
+
+    static fromPolynomial(polynomial, curve, logger) {
+        let length = polynomial.length();
+        let Fr = curve.Fr;
+
+        let buff = length > 2 << 14 ?
+            new ffjavascript.BigBuffer(length * Fr.n8) : new Uint8Array(length * Fr.n8);
+        buff.set(polynomial.coef.slice(), 0);
+
+        return new Polynomial(buff, curve, logger);
+    }
+
+    isEqual(polynomial) {
+        const degree = this.degree();
+        if (degree !== polynomial.degree()) return false;
+
+        for (let i = 0; i < degree + 1; i++) {
+            if (!this.Fr.eq(this.getCoef(i), polynomial.getCoef(i))) return false;
+        }
+
+        return true;
+    }
+
+    blindCoefficients(blindingFactors) {
+        blindingFactors = blindingFactors || [];
+
+        const blindedCoefficients = (this.length() + blindingFactors.length) > 2 << 14 ?
+            new ffjavascript.BigBuffer((this.length() + blindingFactors.length) * this.Fr.n8) :
+            new Uint8Array((this.length() + blindingFactors.length) * this.Fr.n8);
+
+        blindedCoefficients.set(this.coef, 0);
+        for (let i = 0; i < blindingFactors.length; i++) {
+            blindedCoefficients.set(
+                this.Fr.add(
+                    blindedCoefficients.slice((this.length() + i) * this.Fr.n8, (this.length() + i + 1) * this.Fr.n8),
+                    blindingFactors[i]
+                ),
+                (this.length() + i) * this.Fr.n8
+            );
+            blindedCoefficients.set(
+                this.Fr.sub(
+                    blindedCoefficients.slice(i * this.Fr.n8, (i + 1) * this.Fr.n8),
+                    blindingFactors[i]
+                ),
+                i * this.Fr.n8
+            );
+        }
+        this.coef = blindedCoefficients;
+    }
+
+    getCoef(index) {
+        const i_n8 = index * this.Fr.n8;
+
+        if (i_n8 + this.Fr.n8 > this.coef.byteLength) return this.Fr.zero;
+
+        return this.coef.slice(i_n8, i_n8 + this.Fr.n8);
+    }
+
+    setCoef(index, value) {
+        if (index > (this.length() - 1)) {
+            throw new Error("Coef index is not available");
+        }
+
+        this.coef.set(value, index * this.Fr.n8);
+    }
+
+    static async to4T(buffer, domainSize, blindingFactors, Fr) {
+        blindingFactors = blindingFactors || [];
+        let a = await Fr.ifft(buffer);
+
+        const a4 = (domainSize * 4) > 2 << 14 ?
+            new ffjavascript.BigBuffer(domainSize * 4 * Fr.n8) : new Uint8Array(domainSize * 4 * Fr.n8);
+        a4.set(a, 0);
+
+        const A4 = await Fr.fft(a4);
+
+        if (blindingFactors.length === 0) {
+            return [a, A4];
+        }
+
+        const a1 = domainSize + blindingFactors.length > 2 << 14 ?
+            new ffjavascript.BigBuffer((domainSize + blindingFactors.length) * Fr.n8) :
+            new Uint8Array((domainSize + blindingFactors.length) * Fr.n8);
+
+        a1.set(a, 0);
+        for (let i = 0; i < blindingFactors.length; i++) {
+            a1.set(
+                Fr.add(
+                    a1.slice((domainSize + i) * Fr.n8, (domainSize + i + 1) * Fr.n8),
+                    blindingFactors[i]
+                ),
+                (domainSize + i) * Fr.n8
+            );
+            a1.set(
+                Fr.sub(
+                    a1.slice(i * Fr.n8, (i + 1) * Fr.n8),
+                    blindingFactors[i]
+                ),
+                i * Fr.n8
+            );
+        }
+
+        return [a1, A4];
+    }
+
+    length() {
+        let length = this.coef.byteLength / this.Fr.n8;
+        if (length !== Math.floor(this.coef.byteLength / this.Fr.n8)) {
+            throw new Error("Polynomial coefficients buffer has incorrect size");
+        }
+        if (0 === length) {
+            if (this.logger) {
+                this.logger.warn("Polynomial has length zero");
+            }
+        }
+        return length;
+    }
+
+    degree() {
+        for (let i = this.length() - 1; i > 0; i--) {
+            const i_n8 = i * this.Fr.n8;
+            if (!this.Fr.eq(this.Fr.zero, this.coef.slice(i_n8, i_n8 + this.Fr.n8))) {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+
+    evaluate(point) {
+        let res = this.Fr.zero;
+
+        for (let i = this.degree() + 1; i > 0; i--) {
+            let i_n8 = i * this.Fr.n8;
+            const currentCoefficient = this.coef.slice(i_n8 - this.Fr.n8, i_n8);
+            res = this.Fr.add(currentCoefficient, this.Fr.mul(res, point));
+        }
+
+        return res;
+    }
+
+    fastEvaluate(point) {
+        const Fr = this.Fr;
+        let nThreads = 3;
+
+        let nCoefs = this.degree() + 1;
+        let coefsThread = parseInt(nCoefs / nThreads);
+        let residualCoefs = nCoefs - coefsThread * nThreads;
+
+        let res = [];
+        let xN = [];
+
+        xN[0] = Fr.one;
+
+        for (let i = 0; i < nThreads; i++) {
+            res[i] = Fr.zero;
+
+            let nCoefs = i === (nThreads - 1) ? coefsThread + residualCoefs : coefsThread;
+            for (let j = nCoefs; j > 0; j--) {
+                res[i] = Fr.add(this.getCoef((i * coefsThread) + j - 1), Fr.mul(res[i], point));
+
+                if (i === 0) xN[0] = Fr.mul(xN[0], point);
+            }
+        }
+
+        for (let i = 1; i < nThreads; i++) {
+            res[0] = Fr.add(res[0], Fr.mul(xN[i - 1], res[i]));
+            xN[i] = Fr.mul(xN[i - 1], xN[0]);
+        }
+
+        return res[0];
+    }
+
+    add(polynomial, blindingValue) {
+        let other = false;
+
+        if (polynomial.length() > this.length()) {
+            other = true;
+        }
+
+        const thisLength = this.length();
+        const polyLength = polynomial.length();
+        for (let i = 0; i < Math.max(thisLength, polyLength); i++) {
+            const i_n8 = i * this.Fr.n8;
+
+            const a = i < thisLength ? this.coef.slice(i_n8, i_n8 + this.Fr.n8) : this.Fr.zero;
+            let b = i < polyLength ? polynomial.coef.slice(i_n8, i_n8 + this.Fr.n8) : this.Fr.zero;
+
+            if (blindingValue !== undefined) {
+                b = this.Fr.mul(b, blindingValue);
+            }
+            if (other) {
+                polynomial.coef.set(this.Fr.add(a, b), i_n8);
+            } else {
+                this.coef.set(this.Fr.add(a, b), i_n8);
+            }
+        }
+        if (other) {
+            delete this.coef;
+            this.coef = polynomial.coef;
+        }
+    }
+
+    sub(polynomial, blindingValue) {
+        let other = false;
+
+        if (polynomial.length() > this.length()) {
+            other = true;
+        }
+
+        const thisLength = this.length();
+        const polyLength = polynomial.length();
+        for (let i = 0; i < Math.max(thisLength, polyLength); i++) {
+            const i_n8 = i * this.Fr.n8;
+
+            const a = i < thisLength ? this.coef.slice(i_n8, i_n8 + this.Fr.n8) : this.Fr.zero;
+            let b = i < polyLength ? polynomial.coef.slice(i_n8, i_n8 + this.Fr.n8) : this.Fr.zero;
+
+            if (blindingValue !== undefined) {
+                b = this.Fr.mul(b, blindingValue);
+            }
+            if (other) {
+                polynomial.coef.set(this.Fr.sub(a, b), i_n8);
+            } else {
+                this.coef.set(this.Fr.sub(a, b), i_n8);
+            }
+        }
+        if (other) {
+            delete this.coef;
+            this.coef = polynomial.coef;
+        }
+    }
+
+    mulScalar(value) {
+        for (let i = 0; i < this.length(); i++) {
+            const i_n8 = i * this.Fr.n8;
+
+            this.coef.set(this.Fr.mul(this.coef.slice(i_n8, i_n8 + this.Fr.n8), value), i_n8);
+        }
+    }
+
+    addScalar(value) {
+        const currentValue = 0 === this.length() ? this.Fr.zero : this.coef.slice(0, this.Fr.n8);
+        this.coef.set(this.Fr.add(currentValue, value), 0);
+    }
+
+    subScalar(value) {
+        const currentValue = 0 === this.length() ? this.Fr.zero : this.coef.slice(0, this.Fr.n8);
+        this.coef.set(this.Fr.sub(currentValue, value), 0);
+    }
+
+    // Multiply current polynomial by the polynomial (X - value)
+    byXSubValue(value) {
+        const Fr = this.Fr;
+        const resize = !Fr.eq(Fr.zero, this.getCoef(this.length() - 1));
+
+        const length = resize ? this.length() + 1 : this.length();
+        const buff = length > 2 << 14 ? new ffjavascript.BigBuffer(length * Fr.n8) : new Uint8Array(length * Fr.n8);
+        let pol = new Polynomial(buff, this.curve, this.logger);
+
+        // Step 0: Set current coefficients to the new buffer shifted one position
+        pol.coef.set(this.coef.slice(0, (length - 1) * Fr.n8), 32);
+
+        // Step 1: multiply each coefficient by (-value)
+        this.mulScalar(Fr.neg(value));
+
+        // Step 2: Add current polynomial to destination polynomial
+        pol.add(this);
+
+        // Swap buffers
+        this.coef = pol.coef;
+    }
+
+    // Multiply current polynomial by the polynomial (X^n + value)
+    byXNSubValue(n, value) {
+        const Fr = this.Fr;
+        const resize = !(this.length() - n - 1 >= this.degree());
+
+        const length = resize ? this.length() + n : this.length();
+        const buff = length > 2 << 14 ? new ffjavascript.BigBuffer(length * Fr.n8) : new Uint8Array(length * Fr.n8);
+        let pol = new Polynomial(buff, this.curve, this.logger);
+
+        // Step 0: Set current coefficients to the new buffer shifted one position
+        pol.coef.set(this.coef.slice(0, (this.degree() + 1) * 32, ), n * 32);
+
+        // Step 1: multiply each coefficient by (- value)
+        this.mulScalar(value);
+
+        // Step 2: Add current polynomial to destination polynomial
+        pol.add(this);
+
+        // Swap buffers
+        this.coef = pol.coef;
+    }
+
+    // Euclidean division
+    divBy(polynomial) {
+        const Fr = this.Fr;
+        const degreeA = this.degree();
+        const degreeB = polynomial.degree();
+
+        let polR = new Polynomial(this.coef, this.curve, this.logger);
+
+        this.coef = this.length() > 2 << 14 ?
+            new ffjavascript.BigBuffer(this.length() * Fr.n8) : new Uint8Array(this.length() * Fr.n8);
+
+        for (let i = degreeA - degreeB; i >= 0; i--) {
+            this.setCoef(i, Fr.div(polR.getCoef(i + degreeB), polynomial.getCoef(degreeB)));
+            for (let j = 0; j <= degreeB; j++) {
+                polR.setCoef(i + j, Fr.sub(polR.getCoef(i + j), Fr.mul(this.getCoef(i), polynomial.getCoef(j))));
+            }
+        }
+
+        return polR;
+    }
+
+    // Division by a Polynomial of the form (x^m - beta)
+    divByMonic(m, beta) {
+        const Fr = this.Fr;
+
+        let d = this.degree();
+
+        let buffer = this.length() > 2 << 14 ?
+            new ffjavascript.BigBuffer(this.length() * Fr.n8) : new Uint8Array(this.length() * Fr.n8);
+        let quotient = new Polynomial(buffer, this.curve, this.logger);
+
+        let bArr = [];
+
+        // Add the m leading coefficients of this to quotient
+        for (let i = 0; i < m; i++) {
+            quotient.setCoef((d - i) - m, this.getCoef(d - i));
+            bArr[i] = this.getCoef(d - i);
+        }
+
+        let nThreads = m;
+        for (let k = 0; k < nThreads; k++) {
+            for (let i = d - 2 * m - k; i >= 0; i = i - nThreads) {
+                if (i < 0) break;
+                let idx = k;
+                bArr[idx] = Fr.add(this.getCoef(i + m), Fr.mul(bArr[idx], beta));
+
+                quotient.setCoef(i, bArr[idx]);
+            }
+        }
+
+        this.coef = quotient.coef;
+    }
+
+    divByVanishing(n, beta) {
+        if (this.degree() < n) {
+            throw new Error("divByVanishing polynomial divisor must be of degree lower than the dividend polynomial");
+        }
+
+        const Fr = this.Fr;
+
+        let polR = new Polynomial(this.coef, this.curve, this.logger);
+
+        this.coef = this.length() > 2 << 14 ?
+            new ffjavascript.BigBuffer(this.length() * Fr.n8) : new Uint8Array(this.length() * Fr.n8);
+
+        for (let i = this.length() - 1; i >= n; i--) {
+            let leadingCoef = polR.getCoef(i);
+            if (Fr.eq(Fr.zero, leadingCoef)) continue;
+
+            polR.setCoef(i, Fr.zero);
+            polR.setCoef(i - n, Fr.add(polR.getCoef(i - n), Fr.mul(beta, leadingCoef)));
+            this.setCoef(i - n, Fr.add(this.getCoef(i - n), leadingCoef));
+        }
+
+        return polR;
+    }
+
+    divByVanishing2(m, beta) {
+        if (this.degree() < m) {
+            throw new Error("divByVanishing polynomial divisor must be of degree lower than the dividend polynomial");
+        }
+
+        const Fr = this.Fr;
+
+        let polR = new Polynomial(this.coef, this.curve, this.logger);
+
+        this.coef = this.length() > 2 << 14 ?
+            new ffjavascript.BigBuffer(this.length() * Fr.n8) : new Uint8Array(this.length() * Fr.n8);
+
+        let nThreads = 3;
+        let nTotal = this.length() - m;
+        let nElementsChunk = Math.floor(nTotal / nThreads);
+        let nElementsLast = nTotal - (nThreads - 1) * nElementsChunk;
+
+        console.log(nTotal);
+        console.log(nElementsChunk + "  " + nElementsLast);
+        for (let k = 0; k < nThreads; k++) {
+            console.log("> Thread " + k);
+            for (let i = (k === 0 ? nElementsLast : nElementsChunk); i > 0; i--) {
+                let idxDst = i - 1;
+                if (k !== 0) idxDst += (k - 1) * nElementsChunk + nElementsLast;
+                let idxSrc = idxDst + m;
+
+                let leadingCoef = polR.getCoef(idxSrc);
+                if (Fr.eq(Fr.zero, leadingCoef)) continue;
+
+                polR.setCoef(idxSrc, Fr.zero);
+                polR.setCoef(idxDst, Fr.add(polR.getCoef(idxDst), Fr.mul(beta, leadingCoef)));
+                this.setCoef(idxDst, Fr.add(this.getCoef(idxDst), leadingCoef));
+                console.log(idxDst + " <-- " + idxSrc);
+            }
+        }
+
+        this.print();
+        return polR;
+    }
+
+    fastDivByVanishing(data) {
+        const Fr = this.Fr;
+
+        for (let i = 0; i < data.length; i++) {
+
+            let m = data[i][0];
+            let beta = data[i][1];
+
+            if (this.degree() < m) {
+                throw new Error("divByVanishing polynomial divisor must be of degree lower than the dividend polynomial");
+            }
+
+            let nThreads = 5;
+            let nElements = this.length() - m;
+            let nElementsBucket = Math.floor(nElements / nThreads / m);
+            let nElementsChunk = nElementsBucket * m;
+            let nElementsLast = nElements - nThreads * nElementsChunk;
+
+            //In C++ implementation this buffer will be allocated only once outside the loop
+            let polTmp = new Polynomial(this.length() > 2 << 14 ?
+                new ffjavascript.BigBuffer(this.length() * Fr.n8) : new Uint8Array(this.length() * Fr.n8), this.curve, this.logger);
+
+            let ptr = this.coef;
+            this.coef = polTmp.coef;
+            polTmp.coef = ptr;
+
+            // STEP 1: Setejar els m valors del següent bucket al chunk actual, PARALEL·LITZAR
+            for (let k = 0; k < nThreads; k++) {
+                let idx0 = (k + 1) * nElementsChunk + nElementsLast;
+                for (let i = 0; i < m; i++) {
+                    this.setCoef(idx0 + i - m, polTmp.getCoef(idx0 + i));
+                }
+
+                for (let i = 0; i < nElementsChunk - m; i++) {
+                    let offset = idx0 - i - 1;
+                    let val = Fr.add(polTmp.getCoef(offset), Fr.mul(beta, this.getCoef(offset)));
+                    this.setCoef(offset - m, val);
+                }
+            }
+
+            //STEP 2: Setejar els valors del elements last NO PARAL·LELITZAR
+            let idx0 = nElementsLast;
+            let pending = nElementsLast;
+            for (let i = 0; i < m && pending; i++) {
+                this.setCoef(idx0 - i - 1, polTmp.getCoef(idx0 + m - i - 1));
+                pending--;
+            }
+
+            for (let i = 0; i < pending; i++) {
+                let offset = idx0 - i - 1;
+                let val = Fr.add(polTmp.getCoef(offset), Fr.mul(beta, this.getCoef(offset)));
+                this.setCoef(offset - m, val);
+            }
+
+            //Step 3: calcular acumulats NO  PARALEL·LITZAR
+
+            let acc = [];
+            let betaPow = Fr.one;
+            for (let i = 0; i < nElementsBucket; i++) {
+                betaPow = Fr.mul(betaPow, beta);
+            }
+            let currentBeta = Fr.one;
+
+            for (let k = nThreads; k > 0; k--) {
+                let idThread = k - 1;
+                let idx0 = idThread * nElementsChunk + nElementsLast;
+                acc[idThread] = [];
+
+                for (let i = 0; i < m; i++) {
+                    acc[idThread][i] = this.getCoef(idx0 + i);
+
+                    if (k !== nThreads) {
+                        acc[idThread][i] = Fr.add(acc[idThread][i], Fr.mul(betaPow, acc[idThread + 1][i]));
+                    }
+                }
+                currentBeta = Fr.mul(currentBeta, betaPow);
+            }
+
+            //STEP 4 recalcular  PARALEL·LITZAR
+            for (let k = 0; k < nThreads; k++) {
+
+                let idx0 = k * nElementsChunk + nElementsLast;
+                let currentBeta = beta; //Quan hopassem a C++ i ho paralelitzem aquesta variable ha de ser privada
+                let currentM = m - 1;
+
+                let limit = k === 0 ? nElementsLast : nElementsChunk;
+                for (let i = 0; i < limit; i++) {
+                    let offset = idx0 - i - 1;
+                    let val = Fr.add(this.getCoef(offset), Fr.mul(currentBeta, acc[k][currentM]));
+
+                    this.setCoef(offset, val);
+
+                    // To avoid modular operations in each loop...
+                    if (currentM === 0) {
+                        currentM = m - 1;
+                        currentBeta = Fr.mul(currentBeta, beta);
+                    } else {
+                        currentM--;
+                    }
+                }
+            }
+        }
+    }
+
+
+    // Divide polynomial by X - value
+    divByXSubValue(value) {
+        const coefs = this.length() > 2 << 14 ?
+            new ffjavascript.BigBuffer(this.length() * this.Fr.n8) : new Uint8Array(this.length() * this.Fr.n8);
+
+        coefs.set(this.Fr.zero, (this.length() - 1) * this.Fr.n8);
+        coefs.set(this.coef.slice((this.length() - 1) * this.Fr.n8, this.length() * this.Fr.n8), (this.length() - 2) * this.Fr.n8);
+        for (let i = this.length() - 3; i >= 0; i--) {
+            let i_n8 = i * this.Fr.n8;
+            coefs.set(
+                this.Fr.add(
+                    this.coef.slice(i_n8 + this.Fr.n8, i_n8 + 2 * this.Fr.n8),
+                    this.Fr.mul(value, coefs.slice(i_n8 + this.Fr.n8, i_n8 + 2 * this.Fr.n8))
+                ),
+                i * this.Fr.n8
+            );
+        }
+        if (!this.Fr.eq(
+            this.coef.slice(0, this.Fr.n8),
+            this.Fr.mul(this.Fr.neg(value), coefs.slice(0, this.Fr.n8))
+        )) {
+            throw new Error("Polynomial does not divide");
+        }
+
+        this.coef = coefs;
+    }
+
+    divZh(domainSize, extensions = 4) {
+        for (let i = 0; i < domainSize; i++) {
+            const i_n8 = i * this.Fr.n8;
+            this.coef.set(this.Fr.neg(this.coef.slice(i_n8, i_n8 + this.Fr.n8)), i_n8);
+        }
+
+        const upperBound = this.coef.byteLength / this.Fr.n8;
+        for (let i = domainSize; i < upperBound; i++) {
+            const i_n8 = i * this.Fr.n8;
+
+            const a = this.Fr.sub(
+                this.coef.slice((i - domainSize) * this.Fr.n8, (i - domainSize) * this.Fr.n8 + this.Fr.n8),
+                this.coef.slice(i_n8, i_n8 + this.Fr.n8)
+            );
+            this.coef.set(a, i_n8);
+            if (i > (domainSize * (extensions-1) - extensions)) {
+                if (!this.Fr.isZero(a)) {
+                    throw new Error("Polynomial is not divisible");
+                }
+            }
+        }
+
+        return this;
+    }
+
+    divByZerofier(n, beta) {
+        let Fr = this.Fr;
+        const invBeta = Fr.inv(beta);
+        const invBetaNeg = Fr.neg(invBeta);
+
+        let isOne = Fr.eq(Fr.one, invBetaNeg);
+        let isNegOne = Fr.eq(Fr.negone, invBetaNeg);
+
+        if (!isOne) {
+            for (let i = 0; i < n; i++) {
+                const i_n8 = i * this.Fr.n8;
+                let element;
+
+                // If invBetaNeg === -1 we'll save a multiplication changing it by a neg function call
+                if (isNegOne) {
+                    element = Fr.neg(this.coef.slice(i_n8, i_n8 + this.Fr.n8));
+                } else {
+                    element = Fr.mul(invBetaNeg, this.coef.slice(i_n8, i_n8 + this.Fr.n8));
+                }
+
+                this.coef.set(element, i_n8);
+            }
+        }
+
+        isOne = Fr.eq(Fr.one, invBeta);
+        isNegOne = Fr.eq(Fr.negone, invBeta);
+
+        for (let i = n; i < this.length(); i++) {
+            const i_n8 = i * this.Fr.n8;
+            const i_prev_n8 = (i - n) * this.Fr.n8;
+
+            let element = this.Fr.sub(
+                this.coef.slice(i_prev_n8, i_prev_n8 + this.Fr.n8),
+                this.coef.slice(i_n8, i_n8 + this.Fr.n8)
+            );
+
+            // If invBeta === 1 we'll not do anything
+            if(!isOne) {
+                // If invBeta === -1 we'll save a multiplication changing it by a neg function call
+                if(isNegOne) {
+                    element = Fr.neg(element);
+                } else {
+                    element = Fr.mul(invBeta, element);
+                }
+            }
+
+            this.coef.set(element, i_n8);
+
+            // Check if polynomial is divisible by checking if n high coefficients are zero
+            if (i > this.length() - n - 1) {
+                if (!this.Fr.isZero(element)) {
+                    throw new Error("Polynomial is not divisible");
+                }
+            }
+        }
+
+        return this;
+    }
+
+// function divideByVanishing(f, n, p) {
+//     // polynomial division f(X) / (X^n - 1) with remainder
+//     // very cheap, 0 multiplications
+//     // strategy:
+//     // start with q(X) = 0, r(X) = f(X)
+//     // then start changing q, r while preserving the identity:
+//     // f(X) = q(X) * (X^n - 1) + r(X)
+//     // in every step, move highest-degree term of r into the product
+//     // => r eventually has degree < n and we're done
+//     let q = Array(f.length).fill(0n);
+//     let r = [...f];
+//     for (let i = f.length - 1; i >= n; i--) {
+//         let leadingCoeff = r[i];
+//         if (leadingCoeff === 0n) continue;
+//         r[i] = 0n;
+//         r[i - n] = mod(r[i - n] + leadingCoeff, p);
+//         q[i - n] = mod(q[i - n] + leadingCoeff, p);
+//     }
+//     return [q, r];
+// }
+
+    byX() {
+        const coefs = (this.length() + 1) > 2 << 14 ?
+            new ffjavascript.BigBuffer(this.coef.byteLength + this.Fr.n8) : new Uint8Array(this.coef.byteLength + this.Fr.n8);
+        coefs.set(this.Fr.zero, 0);
+        coefs.set(this.coef, this.Fr.n8);
+
+        this.coef = coefs;
+    }
+
+// Compute a new polynomial f(x^n) from f(x)
+// f(x)   = a_0 + a_1·x + a_2·x^2 + ... + a_j·x^j
+// f(x^n) = a_0 + a_1·x^n + a_2·x^2n + ... + a_j·x^jn
+    static
+    async expX(polynomial, n, truncate = false) {
+        const Fr = polynomial.Fr;
+
+        if (n < 1) {
+            // n == 0 not allowed because it has no sense, but if it's necessary we have to return
+            // a zero degree polynomial with a constant coefficient equals to the sum of all the original coefficients
+            throw new Error("Compute a new polynomial to a zero or negative number is not allowed");
+        } else if (1 === n) {
+            return await Polynomial.fromEvaluations(polynomial.coef, curve, polynomial.logger);
+        }
+
+        // length is the length of non-constant coefficients
+        // if truncate === true, the highest zero coefficients (if exist) will be removed
+        const length = truncate ? polynomial.degree() : (polynomial.length() - 1);
+        const bufferDst = (length * n + 1) > 2 << 14 ?
+            new ffjavascript.BigBuffer((length * n + 1) * Fr.n8) : new Uint8Array((length * n + 1) * Fr.n8);
+
+        // Copy constant coefficient as is because is not related to x
+        bufferDst.set(polynomial.getCoef(0), 0);
+
+        for (let i = 1; i <= length; i++) {
+            const i_sFr = i * Fr.n8;
+
+            const coef = polynomial.getCoef(i);
+            bufferDst.set(coef, i_sFr * n);
+        }
+
+        return new Polynomial(bufferDst, polynomial.curve, polynomial.logger);
+    }
+
+    split(numPols, degPols, blindingFactors) {
+        if (numPols < 1) {
+            throw new Error(`Polynomials can't be split in ${numPols} parts`);
+        } else if (1 === numPols) {
+            return [this];
+        }
+
+        //blinding factors can be void or must have a length of numPols - 1
+        if (0 !== blindingFactors.length && blindingFactors.length < numPols - 1) {
+            throw new Error(`Blinding factors length must be ${numPols - 1}`);
+        }
+
+        const chunkByteLength = (degPols + 1) * this.Fr.n8;
+        let res = [];
+
+        // Check polynomial can be split in numChunks parts of chunkSize bytes...
+        const numRealPols = Math.ceil((this.degree() + 1) * this.Fr.n8 / chunkByteLength);
+        if (numRealPols < numPols) {
+            //throw new Error(`Polynomial is short to be split in ${numPols} parts of ${degPols} coefficients each.`);
+            for (let i = numRealPols; i < numPols; i++) {
+                res[i] = new Polynomial(new Uint8Array(this.Fr.n8), this.curve, this.logger);
+            }
+        }
+
+        numPols = Math.min(numPols, numRealPols);
+        for (let i = 0; i < numPols; i++) {
+            const isLast = (numPols - 1) === i;
+            const byteLength = isLast ? this.coef.byteLength - ((numPols - 1) * chunkByteLength) : chunkByteLength + this.Fr.n8;
+
+            let buff = (byteLength / this.Fr.n8) > 2 << 14 ? new ffjavascript.BigBuffer(byteLength) : new Uint8Array(byteLength);
+            res[i] = new Polynomial(buff, this.curve, this.logger);
+
+            const fr = i * chunkByteLength;
+            const to = isLast ? this.coef.byteLength : (i + 1) * chunkByteLength;
+            res[i].coef.set(this.coef.slice(fr, to), 0);
+
+            // Add a blinding factor as higher degree
+            if (!isLast) {
+                res[i].coef.set(blindingFactors[i], chunkByteLength);
+            }
+
+            // Sub blinding factor to the lowest degree
+            if (0 !== i) {
+                const lowestDegree = this.Fr.sub(res[i].coef.slice(0, this.Fr.n8), blindingFactors[i - 1]);
+                res[i].coef.set(lowestDegree, 0);
+            }
+
+            if (isLast) {
+                res[i].truncate();
+            }
+        }
+
+        return res;
+
+        // // compute t_low(X)
+        // let polTLow = new BigBuffer((chunkSize + 1) * n8r);
+        // polTLow.set(t.slice(0, zkey.domainSize * n8r), 0);
+        // // Add blinding scalar b_10 as a new coefficient n
+        // polTLow.set(ch.b[10], zkey.domainSize * n8r);
+        //
+        // // compute t_mid(X)
+        // let polTMid = new BigBuffer((zkey.domainSize + 1) * n8r);
+        // polTMid.set(t.slice(zkey.domainSize * n8r, zkey.domainSize * 2 * n8r), 0);
+        // // Subtract blinding scalar b_10 to the lowest coefficient of t_mid
+        // const lowestMid = Fr.sub(polTMid.slice(0, n8r), ch.b[10]);
+        // polTMid.set(lowestMid, 0);
+        // // Add blinding scalar b_11 as a new coefficient n
+        // polTMid.set(ch.b[11], zkey.domainSize * n8r);
+        //
+        // // compute t_high(X)
+        // let polTHigh = new BigBuffer((zkey.domainSize + 6) * n8r);
+        // polTHigh.set(t.slice(zkey.domainSize * 2 * n8r, (zkey.domainSize * 3 + 6) * n8r), 0);
+        // //Subtract blinding scalar b_11 to the lowest coefficient of t_high
+        // const lowestHigh = Fr.sub(polTHigh.slice(0, n8r), ch.b[11]);
+        // polTHigh.set(lowestHigh, 0);
+        //
+        // proof.T1 = await expTau(polTLow, "multiexp T1");
+        // proof.T2 = await expTau(polTMid, "multiexp T2");
+        // proof.T3 = await expTau(polTHigh, "multiexp T3");
+    }
+
+// split2(degPols, blindingFactors) {
+//     let currentDegree = this.degree();
+//     const numFilledPols = Math.ceil((currentDegree + 1) / (degPols + 1));
+//
+//     //blinding factors can be void or must have a length of numPols - 1
+//     if (0 !== blindingFactors.length && blindingFactors.length < numFilledPols - 1) {
+//         throw new Error(`Blinding factors length must be ${numFilledPols - 1}`);
+//     }
+//
+//     const chunkByteLength = (degPols + 1) * this.Fr.n8;
+//
+//     // Check polynomial can be split in numChunks parts of chunkSize bytes...
+//     if (this.coef.byteLength / chunkByteLength <= numFilledPols - 1) {
+//         throw new Error(`Polynomial is short to be split in ${numFilledPols} parts of ${degPols} coefficients each.`);
+//     }
+//
+//     let res = [];
+//     for (let i = 0; i < numFilledPols; i++) {
+//         const isLast = (numFilledPols - 1) === i;
+//         const byteLength = isLast ? (currentDegree + 1) * this.Fr.n8 - ((numFilledPols - 1) * chunkByteLength) : chunkByteLength + this.Fr.n8;
+//
+//         res[i] = new Polynomial(new BigBuffer(byteLength), this.Fr, this.logger);
+//         const fr = i * chunkByteLength;
+//         const to = isLast ? (currentDegree + 1) * this.Fr.n8 : (i + 1) * chunkByteLength;
+//         res[i].coef.set(this.coef.slice(fr, to), 0);
+//
+//         // Add a blinding factor as higher degree
+//         if (!isLast) {
+//             res[i].coef.set(blindingFactors[i], chunkByteLength);
+//         }
+//
+//         // Sub blinding factor to the lowest degree
+//         if (0 !== i) {
+//             const lowestDegree = this.Fr.sub(res[i].coef.slice(0, this.Fr.n8), blindingFactors[i - 1]);
+//             res[i].coef.set(lowestDegree, 0);
+//         }
+//     }
+//
+//     return res;
+// }
+
+// merge(pols, overlap = true) {
+//     let length = 0;
+//     for (let i = 0; i < pols.length; i++) {
+//         length += pols[i].length();
+//     }
+//
+//     if (overlap) {
+//         length -= pols.length - 1;
+//     }
+//
+//     let res = new Polynomial(new BigBuffer(length * this.Fr.n8));
+//     for (let i = 0; i < pols.length; i++) {
+//         const byteLength = pols[i].coef.byteLength;
+//         if (0 === i) {
+//             res.coef.set(pols[i].coef, 0);
+//         } else {
+//
+//         }
+//     }
+//
+//     return res;
+// }
+
+    truncate() {
+        const deg = this.degree();
+        if (deg + 1 < this.coef.byteLength / this.Fr.n8) {
+            const newCoefs = (deg + 1) > 2 << 14 ?
+                new ffjavascript.BigBuffer((deg + 1) * this.Fr.n8) : new Uint8Array((deg + 1) * this.Fr.n8);
+
+            newCoefs.set(this.coef.slice(0, (deg + 1) * this.Fr.n8), 0);
+            this.coef = newCoefs;
+        }
+    }
+
+    static lagrangePolynomialInterpolation(xArr, yArr, curve) {
+        const Fr = curve.Fr;
+        let polynomial = computeLagrangePolynomial(0);
+        for (let i = 1; i < xArr.length; i++) {
+            polynomial.add(computeLagrangePolynomial(i));
+        }
+
+        return polynomial;
+
+        function computeLagrangePolynomial(i) {
+            let polynomial;
+
+            for (let j = 0; j < xArr.length; j++) {
+                if (j === i) continue;
+
+                if (polynomial === undefined) {
+                    let buff = (xArr.length) > 2 << 14 ?
+                        new ffjavascript.BigBuffer((xArr.length) * Fr.n8) : new Uint8Array((xArr.length) * Fr.n8);
+                    polynomial = new Polynomial(buff, curve);
+                    polynomial.setCoef(0, Fr.neg(xArr[j]));
+                    polynomial.setCoef(1, Fr.one);
+                } else {
+                    polynomial.byXSubValue(xArr[j]);
+                }
+            }
+
+            let denominator = polynomial.evaluate(xArr[i]);
+            denominator = Fr.inv(denominator);
+            const mulFactor = Fr.mul(yArr[i], denominator);
+
+            polynomial.mulScalar(mulFactor);
+
+            return polynomial;
+        }
+    }
+
+    static zerofierPolynomial(xArr, curve) {
+        const Fr = curve.Fr;
+        let buff = (xArr.length + 1) > 2 << 14 ?
+            new ffjavascript.BigBuffer((xArr.length + 1) * Fr.n8) : new Uint8Array((xArr.length + 1) * Fr.n8);
+        let polynomial = new Polynomial(buff, curve);
+
+        // Build a zerofier polynomial with the following form:
+        // zerofier(X) = (X-xArr[0])(X-xArr[1])...(X-xArr[n])
+        polynomial.setCoef(0, Fr.neg(xArr[0]));
+        polynomial.setCoef(1, Fr.one);
+
+        for (let i = 1; i < xArr.length; i++) {
+            polynomial.byXSubValue(xArr[i]);
+        }
+
+        return polynomial;
+    }
+
+    print() {
+        const Fr = this.Fr;
+        let res = "";
+        for (let i = this.degree(); i >= 0; i--) {
+            const coef = this.getCoef(i);
+            if (!Fr.eq(Fr.zero, coef)) {
+                if (Fr.isNegative(coef)) {
+                    res += " - ";
+                } else if (i !== this.degree()) {
+                    res += " + ";
+                }
+                res += Fr.toString(coef);
+                if (i > 0) {
+                    res += i > 1 ? "x^" + i : "x";
+                }
+            }
+        }
+        console.log(res);
+    }
+
+    async multiExponentiation(PTau, name) {
+        const n = this.coef.byteLength / this.Fr.n8;
+        const PTauN = PTau.slice(0, n * this.G1.F.n8 * 2);
+        const bm = await this.Fr.batchFromMontgomery(this.coef);
+        let res = await this.G1.multiExpAffine(PTauN, bm, this.logger, name);
+        res = this.G1.toAffine(res);
+        return res;
+    }
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+class Evaluations {
+    constructor(evaluations, curve, logger) {
+        this.eval = evaluations;
+        this.curve = curve;
+        this.Fr = curve.Fr;
+        this.logger = logger;
+    }
+
+    static async fromPolynomial(polynomial, extension, curve, logger) {
+        const coefficientsN = new ffjavascript.BigBuffer(polynomial.length() * extension * curve.Fr.n8);
+        coefficientsN.set(polynomial.coef, 0);
+
+        const evaluations = await curve.Fr.fft(coefficientsN);
+
+        return new Evaluations(evaluations, curve, logger);
+    }
+
+    getEvaluation(index) {
+        const i_n8 = index * this.Fr.n8;
+
+        if (i_n8 + this.Fr.n8 > this.eval.byteLength) {
+            throw new Error("Evaluations.getEvaluation() out of bounds");
+        }
+
+        return this.eval.slice(i_n8, i_n8 + this.Fr.n8);
+    }
+
+    length() {
+        let length = this.eval.byteLength / this.Fr.n8;
+        if (length !== Math.floor(this.eval.byteLength / this.Fr.n8)) {
+            throw new Error("Polynomial evaluations buffer has incorrect size");
+        }
+        if (0 === length) {
+            this.logger.warn("Polynomial has length zero");
+        }
+        return length;
+    }
+}
+
+/*
     Copyright 2021 0kims association.
 
     This file is part of snarkjs.
@@ -7109,17 +8682,20 @@ async function plonkSetup(r1csName, ptauName, zkeyName, logger) {
     You should have received a copy of the GNU General Public License along with
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
-const {stringifyBigInts} = ffjavascript.utils;
-const { keccak256: keccak256$1 } = jsSha3__default["default"];
-
+const {stringifyBigInts: stringifyBigInts$1} = ffjavascript.utils;
+    
 async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     const {fd: fdWtns, sections: sectionsWtns} = await binFileUtils__namespace.readBinFile(witnessFileName, "wtns", 2, 1<<25, 1<<23);
 
+    // Read witness file
+    if (logger) logger.debug("> Reading witness file");
     const wtns = await readHeader(fdWtns, sectionsWtns);
 
-    const {fd: fdZKey, sections: sectionsZKey} = await binFileUtils__namespace.readBinFile(zkeyFileName, "zkey", 2, 1<<25, 1<<23);
+    // Read zkey file
+    if (logger) logger.debug("> Reading zkey file");
+    const {fd: fdZKey, sections: zkeySections} = await binFileUtils__namespace.readBinFile(zkeyFileName, "zkey", 2, 1<<25, 1<<23);
 
-    const zkey = await readHeader$1(fdZKey, sectionsZKey);
+    const zkey = await readHeader$1(fdZKey, zkeySections);
     if (zkey.protocol != "plonk") {
         throw new Error("zkey file is not plonk");
     }
@@ -7133,59 +8709,65 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     }
 
     const curve = zkey.curve;
-    const Fr = curve.Fr;
-    const G1 = curve.G1;
-    const n8r = curve.Fr.n8;
 
-    if (logger) logger.debug("Reading Wtns");
+    const Fr = curve.Fr;
+    const n8r = curve.Fr.n8;
+    const sDomain = zkey.domainSize * n8r;
+
+    if (logger) {
+        logger.debug("----------------------------");
+        logger.debug("  PLONK PROVE SETTINGS");
+        logger.debug(`  Curve:         ${curve.name}`);
+        logger.debug(`  Circuit power: ${zkey.power}`);
+        logger.debug(`  Domain size:   ${zkey.domainSize}`);
+        logger.debug(`  Vars:          ${zkey.nVars}`);
+        logger.debug(`  Public vars:   ${zkey.nPublic}`);
+        logger.debug(`  Constraints:   ${zkey.nConstraints}`);
+        logger.debug(`  Additions:     ${zkey.nAdditions}`);
+        logger.debug("----------------------------");
+    }
+
+    //Read witness data
+    if (logger) logger.debug("> Reading witness file data");
     const buffWitness = await binFileUtils__namespace.readSection(fdWtns, sectionsWtns, 2);
+
     // First element in plonk is not used and can be any value. (But always the same).
     // We set it to zero to go faster in the exponentiations.
     buffWitness.set(Fr.zero, 0);
     const buffInternalWitness = new ffjavascript.BigBuffer(n8r*zkey.nAdditions);
 
+    let buffers = {};
+    let polynomials = {};
+    let evaluations = {};
+
+    let challenges = {};
+    let proof = new Proof(curve, logger);
+    const transcript = new Keccak256Transcript(curve);
+
+    if (logger) logger.debug(`> Reading Section ${ZKEY_PL_ADDITIONS_SECTION}. Additions`);
     await calculateAdditions();
 
-    let A,B,C,Z;
-    let A4, B4, C4, Z4;
-    let pol_a,pol_b,pol_c, pol_z, pol_t, pol_r;
-    let proof = {};
+    if (logger) logger.debug(`> Reading Section ${ZKEY_PL_SIGMA_SECTION}. Sigma1, Sigma2 & Sigma 3`);
+    if (logger) logger.debug("··· Reading Sigma polynomials ");
+    polynomials.Sigma1 = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+    polynomials.Sigma2 = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+    polynomials.Sigma3 = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
 
-    const sigmaBuff = new ffjavascript.BigBuffer(zkey.domainSize*n8r*4*3);
-    let o = sectionsZKey[12][0].p + zkey.domainSize*n8r;
-    await fdZKey.readToBuffer(sigmaBuff, 0 , zkey.domainSize*n8r*4, o);
-    o += zkey.domainSize*n8r*5;
-    await fdZKey.readToBuffer(sigmaBuff, zkey.domainSize*n8r*4 , zkey.domainSize*n8r*4, o);
-    o += zkey.domainSize*n8r*5;
-    await fdZKey.readToBuffer(sigmaBuff, zkey.domainSize*n8r*8 , zkey.domainSize*n8r*4, o);
+    await fdZKey.readToBuffer(polynomials.Sigma1.coef, 0, sDomain, zkeySections[ZKEY_PL_SIGMA_SECTION][0].p);
+    await fdZKey.readToBuffer(polynomials.Sigma2.coef, 0, sDomain, zkeySections[ZKEY_PL_SIGMA_SECTION][0].p + 5 * sDomain);
+    await fdZKey.readToBuffer(polynomials.Sigma3.coef, 0, sDomain, zkeySections[ZKEY_PL_SIGMA_SECTION][0].p + 10 * sDomain);
 
-    const pol_s1 = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-    await fdZKey.readToBuffer(pol_s1, 0 , zkey.domainSize*n8r, sectionsZKey[12][0].p);
+    if (logger) logger.debug("··· Reading Sigma evaluations");
+    evaluations.Sigma1 = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+    evaluations.Sigma2 = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+    evaluations.Sigma3 = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
 
-    const pol_s2 = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-    await fdZKey.readToBuffer(pol_s2, 0 , zkey.domainSize*n8r, sectionsZKey[12][0].p + 5*zkey.domainSize*n8r);
+    await fdZKey.readToBuffer(evaluations.Sigma1.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_SIGMA_SECTION][0].p + sDomain);
+    await fdZKey.readToBuffer(evaluations.Sigma2.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_SIGMA_SECTION][0].p + 6 * sDomain);
+    await fdZKey.readToBuffer(evaluations.Sigma3.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_SIGMA_SECTION][0].p + 11 * sDomain);
 
-    const PTau = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 14);
-
-
-    const ch = {};
-
-    await round1();
-    await round2();
-    await round3();
-    await round4();
-    await round5();
-
-
-    ///////////////////////
-    // Final adjustments //
-    ///////////////////////
-
-    proof.protocol = "plonk";
-    proof.curve = curve.name;
-
-    await fdZKey.close();
-    await fdWtns.close();
+    if (logger) logger.debug(`> Reading Section ${ZKEY_PL_PTAU_SECTION}. Powers of Tau`);
+    const PTau = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_PL_PTAU_SECTION);
 
     let publicSignals = [];
 
@@ -7194,79 +8776,71 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
         publicSignals.push(ffjavascript.Scalar.fromRprLE(pub));
     }
 
-    proof.A = G1.toObject(proof.A);
-    proof.B = G1.toObject(proof.B);
-    proof.C = G1.toObject(proof.C);
-    proof.Z = G1.toObject(proof.Z);
+    if (logger) logger.debug("");
+    if (logger) logger.debug("> ROUND 1");
+    await round1();
 
-    proof.T1 = G1.toObject(proof.T1);
-    proof.T2 = G1.toObject(proof.T2);
-    proof.T3 = G1.toObject(proof.T3);
+    if (logger) logger.debug("> ROUND 2");
+    await round2();
 
-    proof.eval_a = Fr.toObject(proof.eval_a);
-    proof.eval_b = Fr.toObject(proof.eval_b);
-    proof.eval_c = Fr.toObject(proof.eval_c);
-    proof.eval_s1 = Fr.toObject(proof.eval_s1);
-    proof.eval_s2 = Fr.toObject(proof.eval_s2);
-    proof.eval_zw = Fr.toObject(proof.eval_zw);
-    proof.eval_t = Fr.toObject(proof.eval_t);
-    proof.eval_r = Fr.toObject(proof.eval_r);
+    if (logger) logger.debug("> ROUND 3");
+    await round3();
 
-    proof.Wxi = G1.toObject(proof.Wxi);
-    proof.Wxiw = G1.toObject(proof.Wxiw);
+    if (logger) logger.debug("> ROUND 4");
+    await round4();
 
-    delete proof.eval_t;
+    if (logger) logger.debug("> ROUND 5");
+    await round5();
 
-    proof = stringifyBigInts(proof);
-    publicSignals = stringifyBigInts(publicSignals);
+    ///////////////////////
+    // Final adjustments //
+    ///////////////////////
 
-    return {proof, publicSignals};
+    await fdZKey.close();
+    await fdWtns.close();
+
+    // Prepare proof
+    let _proof = proof.toObjectProof(false);
+    _proof.protocol = "plonk";
+    _proof.curve = curve.name;
+    
+    if (logger) logger.debug("PLONK PROVER FINISHED");
+
+    return {
+        proof: stringifyBigInts$1(_proof),
+        publicSignals: stringifyBigInts$1(publicSignals)
+    };
 
     async function calculateAdditions() {
-        const additionsBuff = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 3);
+        if (logger) logger.debug("··· Computing additions");
+        const additionsBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_PL_ADDITIONS_SECTION);
 
-        const sSum = 8+curve.Fr.n8*2;
+        // sizes: wireId_x = 4 bytes (32 bits), factor_x = field size bits
+        // Addition form: wireId_a wireId_b factor_a factor_b (size is 4 + 4 + sFr + sFr)
+        const sSum = 8 + n8r * 2;
 
-        for (let i=0; i<zkey.nAdditions; i++) {
-            const ai= readUInt32(additionsBuff, i*sSum);
-            const bi= readUInt32(additionsBuff, i*sSum+4);
-            const ac= additionsBuff.slice(i*sSum+8, i*sSum+8+n8r);
-            const bc= additionsBuff.slice(i*sSum+8+n8r, i*sSum+8+n8r*2);
-            const aw= getWitness(ai);
-            const bw= getWitness(bi);
+        for (let i = 0; i < zkey.nAdditions; i++) {
+            if (logger && (0 !== i) && (i % 100000 === 0)) logger.debug(`    addition ${i}/${zkey.nAdditions}`);
 
-            const r = curve.Fr.add(
-                curve.Fr.mul(ac, aw),
-                curve.Fr.mul(bc, bw)
-            );
-            buffInternalWitness.set(r, n8r*i);
+            // Read addition values
+            let offset = i * sSum;
+            const signalId1 = readUInt32(additionsBuff, offset);
+            offset += 4;
+            const signalId2 = readUInt32(additionsBuff, offset);
+            offset += 4;
+            const factor1 = additionsBuff.slice(offset, offset + n8r);
+            offset += n8r;
+            const factor2 = additionsBuff.slice(offset, offset + n8r);
+
+            // Get witness value
+            const witness1 = getWitness(signalId1);
+            const witness2 = getWitness(signalId2);
+
+            //Calculate final result
+            const result = Fr.add(Fr.mul(factor1, witness1), Fr.mul(factor2, witness2));
+
+            buffInternalWitness.set(result, n8r * i);
         }
-
-    }
-
-    async function buildABC() {
-        let A = new ffjavascript.BigBuffer(zkey.domainSize * n8r);
-        let B = new ffjavascript.BigBuffer(zkey.domainSize * n8r);
-        let C = new ffjavascript.BigBuffer(zkey.domainSize * n8r);
-
-        const aMap = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 4);
-        const bMap = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 5);
-        const cMap = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 6);
-
-        for (let i=0; i<zkey.nConstrains; i++) {
-            const iA = readUInt32(aMap, i*4);
-            A.set(getWitness(iA), i*n8r);
-            const iB = readUInt32(bMap, i*4);
-            B.set(getWitness(iB), i*n8r);
-            const iC = readUInt32(cMap, i*4);
-            C.set(getWitness(iC), i*n8r);
-        }
-
-        A = await Fr.batchToMontgomery(A);
-        B = await Fr.batchToMontgomery(B);
-        C = await Fr.batchToMontgomery(C);
-
-        return [A,B,C];
     }
 
     function readUInt32(b, o) {
@@ -7286,223 +8860,341 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     }
 
     async function round1() {
-        ch.b = [];
+        // STEP 1.1 - Generate random blinding scalars (b1, ..., b11) ∈ F
+        challenges.b = [];
         for (let i=1; i<=11; i++) {
-            ch.b[i] = curve.Fr.random();
+            challenges.b[i] = curve.Fr.random();
         }
-    
-        [A, B, C] = await buildABC();
 
-        [pol_a, A4] = await to4T(A, [ch.b[2], ch.b[1]]);
-        [pol_b, B4] = await to4T(B, [ch.b[4], ch.b[3]]);
-        [pol_c, C4] = await to4T(C, [ch.b[6], ch.b[5]]);
+        // STEP 1.2 - Compute wire polynomials a(X), b(X) and c(X)
+        if (logger) logger.debug("> Computing A, B, C wire polynomials");
+        await computeWirePolynomials();
 
-                
-        proof.A = await expTau(pol_a, "multiexp A");
-        proof.B = await expTau(pol_b, "multiexp B");
-        proof.C = await expTau(pol_c, "multiexp C");
+        // STEP 1.3 - Compute [a]_1, [b]_1, [c]_1
+        if (logger) logger.debug("> Computing A, B, C MSM");
+        let commitA = await polynomials.A.multiExponentiation(PTau, "A");
+        let commitB = await polynomials.B.multiExponentiation(PTau, "B");
+        let commitC = await polynomials.C.multiExponentiation(PTau, "C");
+
+        // First output of the prover is ([A]_1, [B]_1, [C]_1)
+        proof.addPolynomial("A", commitA);
+        proof.addPolynomial("B", commitB);
+        proof.addPolynomial("C", commitC);
+
+        return 0;
+    }
+
+    async function computeWirePolynomials() {
+        if (logger) logger.debug("··· Reading data from zkey file");
+
+        // Build A, B and C evaluations buffer from zkey and witness files
+        buffers.A = new ffjavascript.BigBuffer(sDomain);
+        buffers.B = new ffjavascript.BigBuffer(sDomain);
+        buffers.C = new ffjavascript.BigBuffer(sDomain);
+
+        // Read zkey file to the buffers
+        const aMapBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_PL_A_MAP_SECTION);
+        const bMapBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_PL_B_MAP_SECTION);
+        const cMapBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_PL_C_MAP_SECTION);
+
+        // Compute all witness from signal ids and set them to A,B & C buffers
+        for (let i = 0; i < zkey.nConstraints; i++) {
+            const i_sFr = i * n8r;
+            const offset = i * 4;
+
+            // Compute A value from a signal id
+            const signalIdA = readUInt32(aMapBuff, offset);
+            buffers.A.set(getWitness(signalIdA), i_sFr);
+
+            // Compute B value from a signal id
+            const signalIdB = readUInt32(bMapBuff, offset);
+            buffers.B.set(getWitness(signalIdB), i_sFr);
+
+            // Compute C value from a signal id
+            const signalIdC = readUInt32(cMapBuff, offset);
+            buffers.C.set(getWitness(signalIdC), i_sFr);
+        }
+
+        buffers.A = await Fr.batchToMontgomery(buffers.A);
+        buffers.B = await Fr.batchToMontgomery(buffers.B);
+        buffers.C = await Fr.batchToMontgomery(buffers.C);
+
+        // Compute the coefficients of the wire polynomials a(X), b(X) and c(X) from A,B & C buffers
+        if (logger) logger.debug("··· Computing A ifft");
+        polynomials.A = await Polynomial.fromEvaluations(buffers.A, curve, logger);
+        if (logger) logger.debug("··· Computing B ifft");
+        polynomials.B = await Polynomial.fromEvaluations(buffers.B, curve, logger);
+        if (logger) logger.debug("··· Computing C ifft");
+        polynomials.C = await Polynomial.fromEvaluations(buffers.C, curve, logger);
+
+        // Compute extended evaluations of a(X), b(X) and c(X) polynomials
+        if (logger) logger.debug("··· Computing A fft");
+        evaluations.A = await Evaluations.fromPolynomial(polynomials.A, 4, curve, logger);
+        if (logger) logger.debug("··· Computing B fft");
+        evaluations.B = await Evaluations.fromPolynomial(polynomials.B, 4, curve, logger);
+        if (logger) logger.debug("··· Computing C fft");
+        evaluations.C = await Evaluations.fromPolynomial(polynomials.C, 4, curve, logger);
+
+        // Blind a(X), b(X) and c(X) polynomials coefficients with blinding scalars b
+        polynomials.A.blindCoefficients([challenges.b[2], challenges.b[1]]);
+        polynomials.B.blindCoefficients([challenges.b[4], challenges.b[3]]);
+        polynomials.C.blindCoefficients([challenges.b[6], challenges.b[5]]);
+
+        // Check degrees
+        if (polynomials.A.degree() >= zkey.domainSize + 2) {
+            throw new Error("A Polynomial is not well calculated");
+        }
+        if (polynomials.B.degree() >= zkey.domainSize + 2) {
+            throw new Error("B Polynomial is not well calculated");
+        }
+        if (polynomials.C.degree() >= zkey.domainSize + 2) {
+            throw new Error("C Polynomial is not well calculated");
+        }        
     }
 
     async function round2() {
+        // STEP 2.1 - Compute permutation challenge beta and gamma ∈ F
+        // Compute permutation challenge beta
+        if (logger) logger.debug("> Computing challenges beta and gamma");
+        transcript.reset();
 
-        const transcript1 = new Uint8Array(zkey.nPublic*n8r + G1.F.n8*2*3);
-        for (let i=0; i<zkey.nPublic; i++) {
-            Fr.toRprBE(transcript1, i*n8r, A.slice((i)*n8r, (i+1)*n8r));
+        transcript.addPolCommitment(zkey.Qm);
+        transcript.addPolCommitment(zkey.Ql);
+        transcript.addPolCommitment(zkey.Qr);
+        transcript.addPolCommitment(zkey.Qo);
+        transcript.addPolCommitment(zkey.Qc);
+        transcript.addPolCommitment(zkey.S1);
+        transcript.addPolCommitment(zkey.S2);
+        transcript.addPolCommitment(zkey.S3);
+
+        // Add A to the transcript
+        for (let i = 0; i < zkey.nPublic; i++) {
+            transcript.addScalar(buffers.A.slice(i * n8r, i * n8r + n8r));
         }
-        G1.toRprUncompressed(transcript1, zkey.nPublic*n8r + 0, proof.A);
-        G1.toRprUncompressed(transcript1, zkey.nPublic*n8r + G1.F.n8*2, proof.B);
-        G1.toRprUncompressed(transcript1, zkey.nPublic*n8r + G1.F.n8*4, proof.C);
 
-        ch.beta = hashToFr(transcript1);
-        if (logger) logger.debug("beta: " + Fr.toString(ch.beta));
-    
-        const transcript2 = new Uint8Array(n8r);
-        Fr.toRprBE(transcript2, 0, ch.beta);
-        ch.gamma = hashToFr(transcript2);
-        if (logger) logger.debug("gamma: " + Fr.toString(ch.gamma));
-    
-        let numArr = new ffjavascript.BigBuffer(Fr.n8*zkey.domainSize);
-        let denArr = new ffjavascript.BigBuffer(Fr.n8*zkey.domainSize);
+        // Add A, B, C to the transcript
+        transcript.addPolCommitment(proof.getPolynomial("A"));
+        transcript.addPolCommitment(proof.getPolynomial("B"));
+        transcript.addPolCommitment(proof.getPolynomial("C"));
 
+        challenges.beta = transcript.getChallenge();
+        if (logger) logger.debug("··· challenges.beta: " + Fr.toString(challenges.beta, 16));
+
+        // Compute permutation challenge gamma
+        transcript.reset();
+        transcript.addScalar(challenges.beta);
+        challenges.gamma = transcript.getChallenge();
+        if (logger) logger.debug("··· challenges.gamma: " + Fr.toString(challenges.gamma, 16));
+    
+        // STEP 2.2 - Compute permutation polynomial z(X)
+        if (logger) logger.debug("> Computing Z polynomial");
+        await computeZ();
+
+        // STEP 2.3 - Compute permutation [z]_1
+        if (logger) logger.debug("> Computing Z MSM");
+        let commitZ = await polynomials.Z.multiExponentiation(PTau, "Z");
+
+        // Second output of the prover is ([Z]_1)
+        proof.addPolynomial("Z", commitZ);
+    }
+
+    async function computeZ() {
+        if (logger) logger.debug("··· Computing Z evaluations");
+
+        let numArr = new ffjavascript.BigBuffer(sDomain);
+        let denArr = new ffjavascript.BigBuffer(sDomain);
+
+        // Set the first values to 1
         numArr.set(Fr.one, 0);
         denArr.set(Fr.one, 0);
 
+        // Set initial omega
         let w = Fr.one;
-        for (let i=0; i<zkey.domainSize; i++) {
-            let n1 = A.slice(i*n8r, (i+1)*n8r);
-            n1 = Fr.add( n1, Fr.mul(ch.beta, w) );
-            n1 = Fr.add( n1, ch.gamma );
+        for (let i = 0; i < zkey.domainSize; i++) {
+            const i_n8r = i * n8r;
+            
+            const a = buffers.A.slice(i_n8r, i_n8r + n8r);
+            const b = buffers.B.slice(i_n8r, i_n8r + n8r);
+            const c = buffers.C.slice(i_n8r, i_n8r + n8r);
 
-            let n2 = B.slice(i*n8r, (i+1)*n8r);
-            n2 = Fr.add( n2, Fr.mul(zkey.k1, Fr.mul(ch.beta, w) ));
-            n2 = Fr.add( n2, ch.gamma );
+            // Z(X) := numArr / denArr
+            // numArr := (a + beta·ω + gamma)(b + beta·ω·k1 + gamma)(c + beta·ω·k2 + gamma)
+            const betaw = Fr.mul(challenges.beta, w);
 
-            let n3 = C.slice(i*n8r, (i+1)*n8r);
-            n3 = Fr.add( n3, Fr.mul(zkey.k2, Fr.mul(ch.beta, w) ));
-            n3 = Fr.add( n3, ch.gamma );
+            let n1 = Fr.add(a, betaw);
+            n1 = Fr.add(n1, challenges.gamma);
 
-            const num = Fr.mul(n1, Fr.mul(n2, n3));
+            let n2 = Fr.add(b, Fr.mul(zkey.k1, betaw));
+            n2 = Fr.add(n2, challenges.gamma);
 
-            let d1 = A.slice(i*n8r, (i+1)*n8r);
-            d1 = Fr.add(d1, Fr.mul( sigmaBuff.slice(i*n8r*4, i*n8r*4 + n8r) , ch.beta));
-            d1 = Fr.add(d1, ch.gamma);
+            let n3 = Fr.add(c, Fr.mul(zkey.k2, betaw));
+            n3 = Fr.add(n3, challenges.gamma);
 
-            let d2 = B.slice(i*n8r, (i+1)*n8r);
-            d2 = Fr.add(d2, Fr.mul( sigmaBuff.slice((zkey.domainSize + i)*4*n8r, (zkey.domainSize + i)*4*n8r+n8r) , ch.beta));
-            d2 = Fr.add(d2, ch.gamma);
+            let num = Fr.mul(n1, Fr.mul(n2, n3));
 
-            let d3 = C.slice(i*n8r, (i+1)*n8r);
-            d3 = Fr.add(d3, Fr.mul( sigmaBuff.slice((zkey.domainSize*2 + i)*4*n8r, (zkey.domainSize*2 + i)*4*n8r + n8r) , ch.beta));
-            d3 = Fr.add(d3, ch.gamma);
+            // denArr := (a + beta·sigma1 + gamma)(b + beta·sigma2 + gamma)(c + beta·sigma3 + gamma)
+            let d1 = Fr.add(a, Fr.mul(evaluations.Sigma1.getEvaluation(i * 4), challenges.beta));
+            d1 = Fr.add(d1, challenges.gamma);
 
-            const den = Fr.mul(d1, Fr.mul(d2, d3));
+            let d2 = Fr.add(b, Fr.mul(evaluations.Sigma2.getEvaluation(i * 4), challenges.beta));
+            d2 = Fr.add(d2, challenges.gamma);
 
-            numArr.set(  
-                Fr.mul( 
-                    numArr.slice(i*n8r,(i+1)*n8r) , 
-                    num
-                ),
-                ((i+1)%zkey.domainSize)*n8r
-            );
+            let d3 = Fr.add(c, Fr.mul(evaluations.Sigma3.getEvaluation(i * 4), challenges.beta));
+            d3 = Fr.add(d3, challenges.gamma);
 
-            denArr.set(  
-                Fr.mul( 
-                    denArr.slice(i*n8r,(i+1)*n8r) , 
-                    den
-                ),
-                ((i+1)%zkey.domainSize)*n8r
-            );
+            let den = Fr.mul(d1, Fr.mul(d2, d3));
+
+            // Multiply current num value with the previous one saved in numArr
+            num = Fr.mul(numArr.slice(i_n8r, i_n8r + n8r), num);
+            numArr.set(num, ((i + 1) % zkey.domainSize) * n8r);
+
+            // Multiply current den value with the previous one saved in denArr
+            den = Fr.mul(denArr.slice(i_n8r, i_n8r + n8r), den);
+            denArr.set(den, ((i + 1) % zkey.domainSize) * n8r);
 
             w = Fr.mul(w, Fr.w[zkey.power]);
         }
 
+        // Compute the inverse of denArr to compute in the next command the
+        // division numArr/denArr by multiplying num · 1/denArr
         denArr = await Fr.batchInverse(denArr);
 
         // TODO: Do it in assembly and in parallel
-        for (let i=0; i<zkey.domainSize; i++) {
-            numArr.set(   Fr.mul( numArr.slice(i*n8r, (i+1)*n8r), denArr.slice(i*n8r, (i+1)*n8r) )      ,i*n8r);
+        // Multiply numArr · denArr where denArr was inverted in the previous command
+        for (let i = 0; i < zkey.domainSize; i++) {
+            const i_sFr = i * n8r;
+
+            const z = Fr.mul(numArr.slice(i_sFr, i_sFr + n8r), denArr.slice(i_sFr, i_sFr + n8r));
+            numArr.set(z, i_sFr);
         }
+
+        // From now on the values saved on numArr will be Z(X) buffer
+        buffers.Z = numArr;
 
         if (!Fr.eq(numArr.slice(0, n8r), Fr.one)) {
             throw new Error("Copy constraints does not match");
         }
 
-        Z = numArr;
+        // Compute polynomial coefficients z(X) from buffers.Z
+        if (logger) logger.debug("··· Computing Z ifft");
+        polynomials.Z = await Polynomial.fromEvaluations(buffers.Z, curve, logger);
 
-        [pol_z, Z4] = await to4T(Z, [ch.b[9], ch.b[8], ch.b[7]]);
+        // Compute extended evaluations of z(X) polynomial
+        if (logger) logger.debug("··· Computing Z fft");
+        evaluations.Z = await Evaluations.fromPolynomial(polynomials.Z, 4, curve, logger);
 
-        proof.Z = await expTau( pol_z, "multiexp Z");
+        // Blind z(X) polynomial coefficients with blinding scalars b
+        polynomials.Z.blindCoefficients([challenges.b[9], challenges.b[8], challenges.b[7]]);
+
+        // Check degree
+        if (polynomials.Z.degree() >= zkey.domainSize + 3) {
+            throw new Error("Z Polynomial is not well calculated");
+        }
+
+        delete buffers.Z;
     }
 
     async function round3() {
+        if (logger) logger.debug("> Computing challenge alpha");
 
-        /*
-        async function checkDegree(P) {
-            const p = await curve.Fr.ifft(P);
-            let deg = (P.byteLength/n8r)-1;
-            while ((deg>0)&&(Fr.isZero(p.slice(deg*n8r, deg*n8r+n8r)))) deg--;
-            return deg;
+        // STEP 3.1 - Compute evaluation challenge alpha ∈ F
+        transcript.reset();
+        transcript.addScalar(challenges.beta);
+        transcript.addScalar(challenges.gamma);
+        transcript.addPolCommitment(proof.getPolynomial("Z"));
+
+        challenges.alpha = transcript.getChallenge();
+        challenges.alpha2 = Fr.square(challenges.alpha);
+        if (logger) logger.debug("··· challenges.alpha: " + Fr.toString(challenges.alpha, 16));
+
+        // Compute quotient polynomial T(X)
+        if (logger) logger.debug("> Computing T polynomial");
+        await computeT();
+
+        // Compute [T1]_1, [T2]_1, [T3]_1
+        if (logger) logger.debug("> Computing T MSM");
+        let commitT1 = await polynomials.T1.multiExponentiation(PTau, "T1");
+        let commitT2 = await polynomials.T2.multiExponentiation(PTau, "T2");
+        let commitT3 = await polynomials.T3.multiExponentiation(PTau, "T3");
+
+        // Third output of the prover is ([T1]_1, [T2]_1, [T3]_1)
+        proof.addPolynomial("T1", commitT1);
+        proof.addPolynomial("T2", commitT2);
+        proof.addPolynomial("T3", commitT3);        
+    }
+
+    async function computeT() {
+        if (logger)
+            logger.debug(`··· Reading sections ${ZKEY_PL_QL_SECTION}, ${ZKEY_PL_QR_SECTION}` +
+                `, ${ZKEY_PL_QM_SECTION}, ${ZKEY_PL_QO_SECTION}, ${ZKEY_PL_QC_SECTION}. Q selectors`);
+        // Reserve memory for Q's evaluations
+        evaluations.QL = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+        evaluations.QR = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+        evaluations.QM = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+        evaluations.QO = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+        evaluations.QC = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+
+        // Read Q's evaluations from zkey file
+        await fdZKey.readToBuffer(evaluations.QL.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_QL_SECTION][0].p + sDomain);
+        await fdZKey.readToBuffer(evaluations.QR.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_QR_SECTION][0].p + sDomain);
+        await fdZKey.readToBuffer(evaluations.QM.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_QM_SECTION][0].p + sDomain);
+        await fdZKey.readToBuffer(evaluations.QO.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_QO_SECTION][0].p + sDomain);
+        await fdZKey.readToBuffer(evaluations.QC.eval, 0, sDomain * 4, zkeySections[ZKEY_PL_QC_SECTION][0].p + sDomain);
+
+        // Read Lagrange polynomials & evaluations from zkey file
+        evaluations.Lagrange = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4 * zkey.nPublic), curve, logger);
+
+        for (let i = 0; i < zkey.nPublic; i++) {
+            await fdZKey.readToBuffer(evaluations.Lagrange.eval, i * sDomain * 4, sDomain * 4, zkeySections[ZKEY_PL_LAGRANGE_SECTION][0].p + i * 5 * sDomain + sDomain);
         }
 
-        function printPol(P) {
-            const n=(P.byteLength/n8r);
-            console.log("[");
-            for (let i=0; i<n; i++) {
-                console.log(Fr.toString(P.slice(i*n8r, i*n8r+n8r)));
-            }
-            console.log("]");
-        }
-        */
+        buffers.T = new ffjavascript.BigBuffer(sDomain * 4);
+        buffers.Tz = new ffjavascript.BigBuffer(sDomain * 4);
 
-        if (logger) logger.debug("phse3: Reading QM4");    
-        const QM4 = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
-        await fdZKey.readToBuffer(QM4, 0 , zkey.domainSize*n8r*4, sectionsZKey[7][0].p + zkey.domainSize*n8r);
-
-        if (logger) logger.debug("phse3: Reading QL4");    
-        const QL4 = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
-        await fdZKey.readToBuffer(QL4, 0 , zkey.domainSize*n8r*4, sectionsZKey[8][0].p + zkey.domainSize*n8r);
-
-        if (logger) logger.debug("phse3: Reading QR4");    
-        const QR4 = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
-        await fdZKey.readToBuffer(QR4, 0 , zkey.domainSize*n8r*4, sectionsZKey[9][0].p + zkey.domainSize*n8r);
-
-        if (logger) logger.debug("phse3: Reading QO4");    
-        const QO4 = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
-        await fdZKey.readToBuffer(QO4, 0 , zkey.domainSize*n8r*4, sectionsZKey[10][0].p + zkey.domainSize*n8r);
-
-        if (logger) logger.debug("phse3: Reading QC4");    
-        const QC4 = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
-        await fdZKey.readToBuffer(QC4, 0 , zkey.domainSize*n8r*4, sectionsZKey[11][0].p + zkey.domainSize*n8r);
-
-        const lPols = await binFileUtils__namespace.readSection(fdZKey, sectionsZKey, 13);
-
-        const transcript3 = new Uint8Array(G1.F.n8*2);
-        G1.toRprUncompressed(transcript3, 0, proof.Z);
-
-        ch.alpha = hashToFr(transcript3);
-
-        if (logger) logger.debug("alpha: " + Fr.toString(ch.alpha));    
-
-
-        const Z1 = [
-            Fr.zero,
-            Fr.add(Fr.e(-1), Fr.w[2]),
-            Fr.e(-2),
-            Fr.sub(Fr.e(-1), Fr.w[2]),
-        ];
-
-        const Z2 = [
-            Fr.zero,
-            Fr.add(Fr.zero, Fr.mul(Fr.e(-2), Fr.w[2])),
-            Fr.e(4),
-            Fr.sub(Fr.zero, Fr.mul(Fr.e(-2), Fr.w[2])),
-        ];
-
-        const Z3 = [
-            Fr.zero,
-            Fr.add(Fr.e(2), Fr.mul(Fr.e(2), Fr.w[2])),
-            Fr.e(-8),
-            Fr.sub(Fr.e(2), Fr.mul(Fr.e(2), Fr.w[2])),
-        ];
-
-        const T = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
-        const Tz = new ffjavascript.BigBuffer(zkey.domainSize*4*n8r);
+        if (logger) logger.debug("··· Computing T evaluations");
 
         let w = Fr.one;
-        for (let i=0; i<zkey.domainSize*4; i++) {
-            if ((i%4096 == 0)&&(logger)) logger.debug(`calculating t ${i}/${zkey.domainSize*4}`);
+        for (let i = 0; i < zkey.domainSize * 4; i++) {
+            if (logger && (0 !== i) && (i % 100000 === 0))
+                logger.debug(`      T evaluation ${i}/${zkey.domainSize * 4}`);
 
-            const a = A4.slice(i*n8r, i*n8r+n8r);
-            const b = B4.slice(i*n8r, i*n8r+n8r);
-            const c = C4.slice(i*n8r, i*n8r+n8r);
-            const z = Z4.slice(i*n8r, i*n8r+n8r);
-            const zw = Z4.slice(((i+zkey.domainSize*4+4)%(zkey.domainSize*4)) *n8r, ((i+zkey.domainSize*4+4)%(zkey.domainSize*4)) *n8r +n8r);
-            const qm = QM4.slice(i*n8r, i*n8r+n8r);
-            const ql = QL4.slice(i*n8r, i*n8r+n8r);
-            const qr = QR4.slice(i*n8r, i*n8r+n8r);
-            const qo = QO4.slice(i*n8r, i*n8r+n8r);
-            const qc = QC4.slice(i*n8r, i*n8r+n8r);
-            const s1 = sigmaBuff.slice(i*n8r, i*n8r+n8r);
-            const s2 = sigmaBuff.slice((i+zkey.domainSize*4)*n8r, (i+zkey.domainSize*4)*n8r+n8r);
-            const s3 = sigmaBuff.slice((i+zkey.domainSize*8)*n8r, (i+zkey.domainSize*8)*n8r+n8r);
-            const ap = Fr.add(ch.b[2], Fr.mul(ch.b[1], w));
-            const bp = Fr.add(ch.b[4], Fr.mul(ch.b[3], w));
-            const cp = Fr.add(ch.b[6], Fr.mul(ch.b[5], w));
+            const a = evaluations.A.getEvaluation(i);
+            const b = evaluations.B.getEvaluation(i);
+            const c = evaluations.C.getEvaluation(i);
+            const z = evaluations.Z.getEvaluation(i);
+            const zw = evaluations.Z.getEvaluation((zkey.domainSize * 4 + 4 + i) % (zkey.domainSize * 4));
+
+            const qm = evaluations.QM.getEvaluation(i);
+            const ql = evaluations.QL.getEvaluation(i);
+            const qr = evaluations.QR.getEvaluation(i);
+            const qo = evaluations.QO.getEvaluation(i);
+            const qc = evaluations.QC.getEvaluation(i);
+            const s1 = evaluations.Sigma1.getEvaluation(i);
+            const s2 = evaluations.Sigma2.getEvaluation(i);
+            const s3 = evaluations.Sigma3.getEvaluation(i);
+
+            const ap = Fr.add(challenges.b[2], Fr.mul(challenges.b[1], w));
+            const bp = Fr.add(challenges.b[4], Fr.mul(challenges.b[3], w));
+            const cp = Fr.add(challenges.b[6], Fr.mul(challenges.b[5], w));
+
             const w2 = Fr.square(w);
-            const zp = Fr.add(Fr.add(Fr.mul(ch.b[7], w2), Fr.mul(ch.b[8], w)), ch.b[9]);
+            const zp = Fr.add(Fr.add(Fr.mul(challenges.b[7], w2), Fr.mul(challenges.b[8], w)), challenges.b[9]);
             const wW = Fr.mul(w, Fr.w[zkey.power]);
             const wW2 = Fr.square(wW);
-            const zWp = Fr.add(Fr.add(Fr.mul(ch.b[7], wW2), Fr.mul(ch.b[8], wW)), ch.b[9]);
+            const zWp = Fr.add(Fr.add(Fr.mul(challenges.b[7], wW2), Fr.mul(challenges.b[8], wW)), challenges.b[9]);
 
-            let pl = Fr.zero;
-            for (let j=0; j<zkey.nPublic; j++) {
-                pl = Fr.sub(pl, Fr.mul( 
-                    lPols.slice( (j*5*zkey.domainSize+ zkey.domainSize+ i)*n8r, (j*5*zkey.domainSize+ zkey.domainSize + i+1)*n8r),
-                    A.slice(j*n8r, (j+1)*n8r)
-                ));
+            let pi = Fr.zero;
+            for (let j = 0; j < zkey.nPublic; j++) {
+                const offset = (j * 4 * zkey.domainSize) + i;
+
+                const lPol = evaluations.Lagrange.getEvaluation(offset);
+                const aVal = buffers.A.slice(j * n8r, (j + 1) * n8r);
+
+                pi = Fr.sub(pi, Fr.mul(lPol, aVal));
             }
 
-            let [e1, e1z] = mul2(a, b, ap, bp, i%4);
+            // e1 := a(X)b(X)qM(X) + a(X)qL(X) + b(X)qR(X) + c(X)qO(X) + PI(X) + qC(X)
+            let [e1, e1z] = MulZ.mul2(a, b, ap, bp, i % 4, Fr);
             e1 = Fr.mul(e1, qm);
             e1z = Fr.mul(e1z, qm);
 
@@ -7515,477 +9207,325 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
             e1 = Fr.add(e1, Fr.mul(c, qo));
             e1z = Fr.add(e1z, Fr.mul(cp, qo));
 
-            e1 = Fr.add(e1, pl);
+            e1 = Fr.add(e1, pi);
             e1 = Fr.add(e1, qc);
 
-            const betaw = Fr.mul(ch.beta, w);
-            let e2a =a;
+            // e2 := α[(a(X) + βX + γ)(b(X) + βk1X + γ)(c(X) + βk2X + γ)z(X)]
+            const betaw = Fr.mul(challenges.beta, w);
+            let e2a = a;
             e2a = Fr.add(e2a, betaw);
-            e2a = Fr.add(e2a, ch.gamma);
+            e2a = Fr.add(e2a, challenges.gamma);
 
-            let e2b =b;
+            let e2b = b;
             e2b = Fr.add(e2b, Fr.mul(betaw, zkey.k1));
-            e2b = Fr.add(e2b, ch.gamma);
+            e2b = Fr.add(e2b, challenges.gamma);
 
-            let e2c =c;
+            let e2c = c;
             e2c = Fr.add(e2c, Fr.mul(betaw, zkey.k2));
-            e2c = Fr.add(e2c, ch.gamma);
+            e2c = Fr.add(e2c, challenges.gamma);
 
             let e2d = z;
 
-            let [e2, e2z] = mul4(e2a, e2b, e2c, e2d, ap, bp, cp, zp, i%4);
-            e2 = Fr.mul(e2, ch.alpha);
-            e2z = Fr.mul(e2z, ch.alpha);
+            let [e2, e2z] = MulZ.mul4(e2a, e2b, e2c, e2d, ap, bp, cp, zp, i % 4, Fr);
+            e2 = Fr.mul(e2, challenges.alpha);
+            e2z = Fr.mul(e2z, challenges.alpha);
 
+            // e3 := α[(a(X) + βSσ1(X) + γ)(b(X) + βSσ2(X) + γ)(c(X) + βSσ3(X) + γ)z(Xω)]
             let e3a = a;
-            e3a = Fr.add(e3a, Fr.mul(ch.beta, s1));
-            e3a = Fr.add(e3a, ch.gamma);
+            e3a = Fr.add(e3a, Fr.mul(challenges.beta, s1));
+            e3a = Fr.add(e3a, challenges.gamma);
 
             let e3b = b;
-            e3b = Fr.add(e3b, Fr.mul(ch.beta,s2));
-            e3b = Fr.add(e3b, ch.gamma);
+            e3b = Fr.add(e3b, Fr.mul(challenges.beta, s2));
+            e3b = Fr.add(e3b, challenges.gamma);
 
             let e3c = c;
-            e3c = Fr.add(e3c, Fr.mul(ch.beta,s3));
-            e3c = Fr.add(e3c, ch.gamma);
+            e3c = Fr.add(e3c, Fr.mul(challenges.beta, s3));
+            e3c = Fr.add(e3c, challenges.gamma);
 
             let e3d = zw;
-            let [e3, e3z] = mul4(e3a, e3b, e3c, e3d, ap, bp, cp, zWp, i%4);
+            let [e3, e3z] = MulZ.mul4(e3a, e3b, e3c, e3d, ap, bp, cp, zWp, i % 4, Fr);
 
-            e3 = Fr.mul(e3, ch.alpha);
-            e3z = Fr.mul(e3z, ch.alpha);
+            e3 = Fr.mul(e3, challenges.alpha);
+            e3z = Fr.mul(e3z, challenges.alpha);
 
+            // e4 := α^2(z(X)−1)L1(X)
             let e4 = Fr.sub(z, Fr.one);
-            e4 = Fr.mul(e4, lPols.slice( (zkey.domainSize + i)*n8r, (zkey.domainSize+i+1)*n8r));
-            e4 = Fr.mul(e4, Fr.mul(ch.alpha, ch.alpha));
+            e4 = Fr.mul(e4, evaluations.Lagrange.getEvaluation(i));
+            e4 = Fr.mul(e4, challenges.alpha2);
 
-            let e4z = Fr.mul(zp, lPols.slice( (zkey.domainSize + i)*n8r, (zkey.domainSize+i+1)*n8r));
-            e4z = Fr.mul(e4z, Fr.mul(ch.alpha, ch.alpha));
+            let e4z = Fr.mul(zp, evaluations.Lagrange.getEvaluation(i));
+            e4z = Fr.mul(e4z, challenges.alpha2);
 
-            let e = Fr.add(Fr.sub(Fr.add(e1, e2), e3), e4);
-            let ez = Fr.add(Fr.sub(Fr.add(e1z, e2z), e3z), e4z);
 
-            T.set(e, i*n8r);
-            Tz.set(ez, i*n8r);
+            let t = Fr.add(Fr.sub(Fr.add(e1, e2), e3), e4);
+            let tz = Fr.add(Fr.sub(Fr.add(e1z, e2z), e3z), e4z);
 
-            w = Fr.mul(w, Fr.w[zkey.power+2]);
+            buffers.T.set(t, i * n8r);
+            buffers.Tz.set(tz, i * n8r);
+
+            w = Fr.mul(w, Fr.w[zkey.power + 2]);
         }
 
-        if (logger) logger.debug("ifft T");    
-        let t = await Fr.ifft(T);
+        // Compute the coefficients of the polynomial T0(X) from buffers.T0
+        if (logger)
+            logger.debug("··· Computing T ifft");
+        polynomials.T = await Polynomial.fromEvaluations(buffers.T, curve, logger);
 
-        if (logger) logger.debug("dividing T/Z");    
-        for (let i=0; i<zkey.domainSize; i++) {
-            t.set(Fr.neg(t.slice(i*n8r, i*n8r+n8r)), i*n8r);
+        // Divide the polynomial T0 by Z_H(X)
+        if (logger)
+            logger.debug("··· Computing T / ZH");
+        polynomials.T.divZh(zkey.domainSize, 4);
+
+        // Compute the coefficients of the polynomial Tz(X) from buffers.Tz
+        if (logger)
+            logger.debug("··· Computing Tz ifft");
+        polynomials.Tz = await Polynomial.fromEvaluations(buffers.Tz, curve, logger);
+
+        // Add the polynomial T1z to T1 to get the final polynomial T1
+        polynomials.T.add(polynomials.Tz);
+
+        // Check degree
+        if (polynomials.T.degree() >= zkey.domainSize * 3 + 6) {
+            throw new Error("T Polynomial is not well calculated");
         }
-
-        for (let i=zkey.domainSize; i<zkey.domainSize*4; i++) {
-            const a = Fr.sub(
-                t.slice((i-zkey.domainSize)*n8r, (i-zkey.domainSize)*n8r + n8r),
-                t.slice(i*n8r, i*n8r+n8r)
-            );
-            t.set(a, i*n8r);
-            if (i > (zkey.domainSize*3 -4) ) {
-                if (!Fr.isZero(a)) {
-                    throw new Error("T Polynomial is not divisible");
-                }
-            }
-        }
-
-        if (logger) logger.debug("ifft Tz");    
-        const tz = await Fr.ifft(Tz);
-        for (let i=0; i<zkey.domainSize*4; i++) {
-            const a = tz.slice(i*n8r, (i+1)*n8r);
-            if (i > (zkey.domainSize*3 +5) ) {
-                if (!Fr.isZero(a)) {
-                    throw new Error("Tz Polynomial is not well calculated");
-                }
-            } else {
-                t.set(  
-                    Fr.add(
-                        t.slice(i*n8r, (i+1)*n8r),
-                        a
-                    ),
-                    i*n8r
-                );
-            }
-        }
-
-        pol_t = t.slice(0, (zkey.domainSize * 3 + 6) * n8r);
 
         // t(x) has degree 3n + 5, we are going to split t(x) into three smaller polynomials:
-        // t'_low and t'_mid  with a degree < n and t'_high with a degree n+5
-        // such that t(x) = t'_low(X) + X^n t'_mid(X) + X^{2n} t'_hi(X)
+        // T1' and T2'  with a degree < n and T3' with a degree n+5
+        // such that t(x) = T1'(X) + X^n T2'(X) + X^{2n} T3'(X)
         // To randomize the parts we use blinding scalars b_10 and b_11 in a way that doesn't change t(X):
-        // t_low(X) = t'_low(X) + b_10 X^n
-        // t_mid(X) = t'_mid(X) - b_10 + b_11 X^n
-        // t_high(X) = t'_high(X) - b_11
+        // T1(X) = T1'(X) + b_10 X^n
+        // T2(X) = T2'(X) - b_10 + b_11 X^n
+        // T3(X) = T3'(X) - b_11
         // such that
-        // t(X) = t_low(X) + X^n t_mid(X) + X^2n t_high(X)
+        // t(X) = T1(X) + X^n T2(X) + X^2n T3(X)
+        if (logger) logger.debug("··· Computing T1, T2, T3 polynomials");
+        polynomials.T1 = new Polynomial(new ffjavascript.BigBuffer((zkey.domainSize + 1) * n8r), curve, logger);
+        polynomials.T2 = new Polynomial(new ffjavascript.BigBuffer((zkey.domainSize + 1) * n8r), curve, logger);
+        polynomials.T3 = new Polynomial(new ffjavascript.BigBuffer((zkey.domainSize + 6) * n8r), curve, logger);
 
-        // compute t_low(X)
-        let polTLow = new ffjavascript.BigBuffer((zkey.domainSize + 1) * n8r);
-        polTLow.set(t.slice(0, zkey.domainSize * n8r), 0);
+        polynomials.T1.coef.set(polynomials.T.coef.slice(0, sDomain), 0);
+        polynomials.T2.coef.set(polynomials.T.coef.slice(sDomain, sDomain * 2), 0);
+        polynomials.T3.coef.set(polynomials.T.coef.slice(sDomain * 2, sDomain * 3 + 6 * n8r), 0);
+
         // Add blinding scalar b_10 as a new coefficient n
-        polTLow.set(ch.b[10], zkey.domainSize * n8r);
+        polynomials.T1.setCoef(zkey.domainSize, challenges.b[10]);
 
         // compute t_mid(X)
-        let polTMid = new ffjavascript.BigBuffer((zkey.domainSize + 1) * n8r);
-        polTMid.set(t.slice(zkey.domainSize * n8r, zkey.domainSize * 2 * n8r), 0);
         // Subtract blinding scalar b_10 to the lowest coefficient of t_mid
-        const lowestMid = Fr.sub(polTMid.slice(0, n8r), ch.b[10]);
-        polTMid.set(lowestMid, 0);
-        // Add blinding scalar b_11 as a new coefficient n
-        polTMid.set(ch.b[11], zkey.domainSize * n8r);
+        const lowestMid = Fr.sub(polynomials.T2.getCoef(0), challenges.b[10]);
+        polynomials.T2.setCoef(0, lowestMid);
+        polynomials.T2.setCoef(zkey.domainSize, challenges.b[11]);
 
         // compute t_high(X)
-        let polTHigh = new ffjavascript.BigBuffer((zkey.domainSize + 6) * n8r);
-        polTHigh.set(t.slice(zkey.domainSize * 2 * n8r, (zkey.domainSize * 3 + 6) * n8r), 0);
         //Subtract blinding scalar b_11 to the lowest coefficient of t_high
-        const lowestHigh = Fr.sub(polTHigh.slice(0, n8r), ch.b[11]);
-        polTHigh.set(lowestHigh, 0);
-
-        proof.T1 = await expTau(polTLow, "multiexp T1");
-        proof.T2 = await expTau(polTMid, "multiexp T2");
-        proof.T3 = await expTau(polTHigh, "multiexp T3");
-
-        function mul2(a,b, ap, bp,  p) {
-            let r, rz;
-
-            
-            const a_b = Fr.mul(a,b);
-            const a_bp = Fr.mul(a,bp);
-            const ap_b = Fr.mul(ap,b);
-            const ap_bp = Fr.mul(ap,bp);
-
-            r = a_b;
-
-            let a0 = Fr.add(a_bp, ap_b);
-
-            let a1 = ap_bp;
-
-            rz = a0;
-            if (p) {
-                rz = Fr.add(rz, Fr.mul(Z1[p], a1));
-            }
-
-            return [r, rz];
-        }
-
-        function mul4(a,b,c,d, ap, bp, cp, dp, p) {
-            let r, rz;
-
-            
-            const a_b = Fr.mul(a,b);
-            const a_bp = Fr.mul(a,bp);
-            const ap_b = Fr.mul(ap,b);
-            const ap_bp = Fr.mul(ap,bp);
-
-            const c_d = Fr.mul(c,d);
-            const c_dp = Fr.mul(c,dp);
-            const cp_d = Fr.mul(cp,d);
-            const cp_dp = Fr.mul(cp,dp);
-
-            r = Fr.mul(a_b, c_d);
-
-            let a0 = Fr.mul(ap_b, c_d);
-            a0 = Fr.add(a0, Fr.mul(a_bp, c_d));
-            a0 = Fr.add(a0, Fr.mul(a_b, cp_d));
-            a0 = Fr.add(a0, Fr.mul(a_b, c_dp));
-
-            let a1 = Fr.mul(ap_bp, c_d);
-            a1 = Fr.add(a1, Fr.mul(ap_b, cp_d));
-            a1 = Fr.add(a1, Fr.mul(ap_b, c_dp));
-            a1 = Fr.add(a1, Fr.mul(a_bp, cp_d));
-            a1 = Fr.add(a1, Fr.mul(a_bp, c_dp));
-            a1 = Fr.add(a1, Fr.mul(a_b, cp_dp));
-
-            let a2 = Fr.mul(a_bp, cp_dp);
-            a2 = Fr.add(a2, Fr.mul(ap_b, cp_dp));
-            a2 = Fr.add(a2, Fr.mul(ap_bp, c_dp));
-            a2 = Fr.add(a2, Fr.mul(ap_bp, cp_d));
-
-            let a3 = Fr.mul(ap_bp, cp_dp);
-
-            rz = a0;
-            if (p) {
-                rz = Fr.add(rz, Fr.mul(Z1[p], a1));
-                rz = Fr.add(rz, Fr.mul(Z2[p], a2));
-                rz = Fr.add(rz, Fr.mul(Z3[p], a3));
-            }
-
-            return [r, rz];
-        }
+        const lowestHigh = Fr.sub(polynomials.T3.getCoef(0), challenges.b[11]);
+        polynomials.T3.setCoef(0, lowestHigh);
     }
 
     async function round4() {
-        const pol_qm = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-        await fdZKey.readToBuffer(pol_qm, 0 , zkey.domainSize*n8r, sectionsZKey[7][0].p);
+        if (logger) logger.debug("> Computing challenge xi");
 
-        const pol_ql = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-        await fdZKey.readToBuffer(pol_ql, 0 , zkey.domainSize*n8r, sectionsZKey[8][0].p);
+        // STEP 4.1 - Compute evaluation challenge xi ∈ F
+        transcript.reset();
+        transcript.addScalar(challenges.alpha);
+        transcript.addPolCommitment(proof.getPolynomial("T1"));
+        transcript.addPolCommitment(proof.getPolynomial("T2"));
+        transcript.addPolCommitment(proof.getPolynomial("T3"));
 
-        const pol_qr = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-        await fdZKey.readToBuffer(pol_qr, 0 , zkey.domainSize*n8r, sectionsZKey[9][0].p);
-
-        const pol_qo = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-        await fdZKey.readToBuffer(pol_qo, 0 , zkey.domainSize*n8r, sectionsZKey[10][0].p);
-
-        const pol_qc = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-        await fdZKey.readToBuffer(pol_qc, 0 , zkey.domainSize*n8r, sectionsZKey[11][0].p);
-
-        const pol_s3 = new ffjavascript.BigBuffer(zkey.domainSize*n8r);
-        await fdZKey.readToBuffer(pol_s3, 0 , zkey.domainSize*n8r, sectionsZKey[12][0].p + 10*zkey.domainSize*n8r);
-
-        const transcript4 = new Uint8Array(G1.F.n8*2*3);
-        G1.toRprUncompressed(transcript4, 0, proof.T1);
-        G1.toRprUncompressed(transcript4, G1.F.n8*2, proof.T2);
-        G1.toRprUncompressed(transcript4, G1.F.n8*4, proof.T3);
-        ch.xi = hashToFr(transcript4);
-
-        if (logger) logger.debug("xi: " + Fr.toString(ch.xi));    
-
-        proof.eval_a = evalPol(pol_a, ch.xi);
-        proof.eval_b = evalPol(pol_b, ch.xi);
-        proof.eval_c = evalPol(pol_c, ch.xi);
-        proof.eval_s1 = evalPol(pol_s1, ch.xi);
-        proof.eval_s2 = evalPol(pol_s2, ch.xi);
-        proof.eval_t = evalPol(pol_t, ch.xi);
-        proof.eval_zw = evalPol(pol_z, Fr.mul(ch.xi, Fr.w[zkey.power]));
-
-        const coef_ab = Fr.mul(proof.eval_a, proof.eval_b);
+        challenges.xi = transcript.getChallenge();
+        challenges.xiw = Fr.mul(challenges.xi, Fr.w[zkey.power]);
         
-        let e2a = proof.eval_a;
-        const betaxi = Fr.mul(ch.beta, ch.xi);
-        e2a = Fr.add( e2a, betaxi);
-        e2a = Fr.add( e2a, ch.gamma);
+        if (logger) logger.debug("··· challenges.xi: " + Fr.toString(challenges.xi, 16));  
 
-        let e2b = proof.eval_b;
-        e2b = Fr.add( e2b, Fr.mul(betaxi, zkey.k1));
-        e2b = Fr.add( e2b, ch.gamma);
-
-        let e2c = proof.eval_c;
-        e2c = Fr.add( e2c, Fr.mul(betaxi, zkey.k2));
-        e2c = Fr.add( e2c, ch.gamma);
-
-        const e2 = Fr.mul(Fr.mul(Fr.mul(e2a, e2b), e2c), ch.alpha);
-
-        let e3a = proof.eval_a;
-        e3a = Fr.add( e3a, Fr.mul(ch.beta, proof.eval_s1));
-        e3a = Fr.add( e3a, ch.gamma);
-
-        let e3b = proof.eval_b;
-        e3b = Fr.add( e3b, Fr.mul(ch.beta, proof.eval_s2));
-        e3b = Fr.add( e3b, ch.gamma);
-
-        let e3 = Fr.mul(e3a, e3b);
-        e3 = Fr.mul(e3, ch.beta);
-        e3 = Fr.mul(e3, proof.eval_zw);
-        e3 = Fr.mul(e3, ch.alpha);
-
-        ch.xim= ch.xi;
-        for (let i=0; i<zkey.power; i++) ch.xim = Fr.mul(ch.xim, ch.xim);
-        const eval_l1 = Fr.div(
-            Fr.sub(ch.xim, Fr.one),
-            Fr.mul(Fr.sub(ch.xi, Fr.one), Fr.e(zkey.domainSize))
-        );
-
-        const e4 = Fr.mul(eval_l1, Fr.mul(ch.alpha, ch.alpha));
-
-        const coefs3 = e3;
-        const coefz = Fr.add(e2, e4);
-
-        pol_r = new ffjavascript.BigBuffer((zkey.domainSize+3)*n8r);
-
-        for (let i = 0; i<zkey.domainSize+3; i++) {
-            let v = Fr.mul(coefz, pol_z.slice(i*n8r,(i+1)*n8r));
-            if (i<zkey.domainSize) {
-                v = Fr.add(v, Fr.mul(coef_ab, pol_qm.slice(i*n8r,(i+1)*n8r)));
-                v = Fr.add(v, Fr.mul(proof.eval_a, pol_ql.slice(i*n8r,(i+1)*n8r)));
-                v = Fr.add(v, Fr.mul(proof.eval_b, pol_qr.slice(i*n8r,(i+1)*n8r)));
-                v = Fr.add(v, Fr.mul(proof.eval_c, pol_qo.slice(i*n8r,(i+1)*n8r)));
-                v = Fr.add(v, pol_qc.slice(i*n8r,(i+1)*n8r));
-                v = Fr.sub(v, Fr.mul(coefs3, pol_s3.slice(i*n8r,(i+1)*n8r)));
-            }
-            pol_r.set(v, i*n8r);
-        }
-
-        proof.eval_r = evalPol(pol_r, ch.xi);
+        // Fourth output of the prover is ( a(xi), b(xi), c(xi), s1(xi), s2(xi), z(xiw) )
+        proof.addEvaluation("eval_a", polynomials.A.evaluate(challenges.xi));
+        proof.addEvaluation("eval_b", polynomials.B.evaluate(challenges.xi));
+        proof.addEvaluation("eval_c", polynomials.C.evaluate(challenges.xi));
+        proof.addEvaluation("eval_s1", polynomials.Sigma1.evaluate(challenges.xi));
+        proof.addEvaluation("eval_s2", polynomials.Sigma2.evaluate(challenges.xi));
+        proof.addEvaluation("eval_zw", polynomials.Z.evaluate(challenges.xiw));
     }
 
     async function round5() {
-        const transcript5 = new Uint8Array(n8r*7);
-        Fr.toRprBE(transcript5, 0, proof.eval_a);
-        Fr.toRprBE(transcript5, n8r, proof.eval_b);
-        Fr.toRprBE(transcript5, n8r*2, proof.eval_c);
-        Fr.toRprBE(transcript5, n8r*3, proof.eval_s1);
-        Fr.toRprBE(transcript5, n8r*4, proof.eval_s2);
-        Fr.toRprBE(transcript5, n8r*5, proof.eval_zw);
-        Fr.toRprBE(transcript5, n8r*6, proof.eval_r);
-        ch.v = [];
-        ch.v[1] = hashToFr(transcript5);
-        if (logger) logger.debug("v: " + Fr.toString(ch.v[1]));    
-
-        for (let i=2; i<=6; i++ ) ch.v[i] = Fr.mul(ch.v[i-1], ch.v[1]);
+        if (logger) logger.debug("> Computing challenge v");
         
-        let pol_wxi = new ffjavascript.BigBuffer((zkey.domainSize+6)*n8r);
+        // STEP 5.1 - Compute evaluation challenge v ∈ F
+        transcript.reset();
+        transcript.addScalar(challenges.xi);
+        transcript.addScalar(proof.getEvaluation("eval_a"));
+        transcript.addScalar(proof.getEvaluation("eval_b"));
+        transcript.addScalar(proof.getEvaluation("eval_c"));
+        transcript.addScalar(proof.getEvaluation("eval_s1"));
+        transcript.addScalar(proof.getEvaluation("eval_s2"));
+        transcript.addScalar(proof.getEvaluation("eval_zw"));
 
-        const xi2m = Fr.mul(ch.xim, ch.xim);
+        challenges.v = [];
+        challenges.v[1] = transcript.getChallenge();
+        if (logger) logger.debug("··· challenges.v: " + Fr.toString(challenges.v[1], 16));
 
-        for (let i = 0; i < zkey.domainSize + 6; i++) {
-            let w = Fr.zero;
+        for (let i = 2; i < 6; i++) {
+            challenges.v[i] = Fr.mul(challenges.v[i - 1], challenges.v[1]);
+        }
 
-            const polTHigh = pol_t.slice((zkey.domainSize * 2 + i) * n8r, (zkey.domainSize * 2 + i + 1) * n8r);
-            w = Fr.add(w, Fr.mul(xi2m, polTHigh));
+        // STEP 5.2 Compute linearisation polynomial r(X)
+        if (logger) logger.debug("> Computing linearisation polynomial R(X)");
+        await computeR();
 
-            if (i < zkey.domainSize + 3) {
-                w = Fr.add(w, Fr.mul(ch.v[1], pol_r.slice(i * n8r, (i + 1) * n8r)));
+        //STEP 5.3 Compute opening proof polynomial Wxi(X)
+        if (logger) logger.debug("> Computing opening proof polynomial Wxi(X) polynomial");
+        computeWxi();
+
+        //STEP 5.4 Compute opening proof polynomial Wxiw(X)
+        if (logger) logger.debug("> Computing opening proof polynomial Wxiw(X) polynomial");
+        computeWxiw();
+
+        if (logger) logger.debug("> Computing Wxi, Wxiw MSM");
+        let commitWxi = await polynomials.Wxi.multiExponentiation(PTau, "Wxi");
+        let commitWxiw = await polynomials.Wxiw.multiExponentiation(PTau, "Wxiw");
+
+        // Fifth output of the prover is ([Wxi]_1, [Wxiw]_1)
+        proof.addPolynomial("Wxi", commitWxi);
+        proof.addPolynomial("Wxiw", commitWxiw);
+    }
+
+    async function computeR() {
+        const Fr = curve.Fr;
+    
+        // Reserve memory for Q's polynomials
+        polynomials.QL = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QR = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QM = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QO = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QC = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+
+        // Read Q's evaluations from zkey file
+        await fdZKey.readToBuffer(polynomials.QL.coef, 0, sDomain, zkeySections[ZKEY_PL_QL_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QR.coef, 0, sDomain, zkeySections[ZKEY_PL_QR_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QM.coef, 0, sDomain, zkeySections[ZKEY_PL_QM_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QO.coef, 0, sDomain, zkeySections[ZKEY_PL_QO_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QC.coef, 0, sDomain, zkeySections[ZKEY_PL_QC_SECTION][0].p);   
+        
+        challenges.xin = challenges.xi;
+        for (let i = 0; i < zkey.power; i++) {
+            challenges.xin = Fr.square(challenges.xin);
+        }
+
+        challenges.zh = Fr.sub(challenges.xin, Fr.one);
+
+        const L = [];
+
+        const n = Fr.e(zkey.domainSize);
+        let w = Fr.one;
+        for (let i = 1; i <= Math.max(1, zkey.nPublic); i++) {
+            L[i] = Fr.div(Fr.mul(w, challenges.zh), Fr.mul(n, Fr.sub(challenges.xi, w)));
+            w = Fr.mul(w, Fr.w[zkey.power]);
+        }
+
+        const eval_l1 = Fr.div(
+            Fr.sub(challenges.xin, Fr.one),
+            Fr.mul(n, Fr.sub(challenges.xi, Fr.one))
+        );
+
+        if (logger) {
+            logger.debug("Lagrange Evaluations: ");
+            for (let i=1; i<L.length; i++) {
+                logger.debug(`L${i}(xi)=` + Fr.toString(L[i], 16));    
             }
-
-            if (i < zkey.domainSize + 2) {
-                w = Fr.add(w, Fr.mul(ch.v[2], pol_a.slice(i * n8r, (i + 1) * n8r)));
-                w = Fr.add(w, Fr.mul(ch.v[3], pol_b.slice(i * n8r, (i + 1) * n8r)));
-                w = Fr.add(w, Fr.mul(ch.v[4], pol_c.slice(i * n8r, (i + 1) * n8r)));
-            }
-
-            if (i < zkey.domainSize) {
-                const polTLow = pol_t.slice(i * n8r, (i + 1) * n8r);
-                w = Fr.add(w, polTLow);
-
-                const polTMid = pol_t.slice((zkey.domainSize + i) * n8r, (zkey.domainSize + i + 1) * n8r);
-                w = Fr.add(w, Fr.mul(ch.xim, polTMid));
-
-                w = Fr.add(w, Fr.mul(ch.v[5], pol_s1.slice(i * n8r, (i + 1) * n8r)));
-                w = Fr.add(w, Fr.mul(ch.v[6], pol_s2.slice(i * n8r, (i + 1) * n8r)));
-            }
-
-            // b_10 and b_11 blinding scalars were applied on round 3 to randomize the polynomials t_low, t_mid, t_high
-            // Subtract blinding scalar b_10 and b_11 to the lowest coefficient
-            if (i === 0) {
-                w = Fr.sub(w, Fr.mul(xi2m, ch.b[11]));
-                w = Fr.sub(w, Fr.mul(ch.xim, ch.b[10]));
-            }
-
-            // Add blinding scalars b_10 and b_11 to the coefficient n
-            if (i === zkey.domainSize) {
-                w = Fr.add(w, ch.b[10]);
-                w = Fr.add(w, Fr.mul(ch.xim, ch.b[11]));
-            }
-
-            pol_wxi.set(w, i * n8r);
         }
 
-        let w0 = pol_wxi.slice(0, n8r);
-        w0 = Fr.sub(w0, proof.eval_t);
-        w0 = Fr.sub(w0, Fr.mul(ch.v[1], proof.eval_r));
-        w0 = Fr.sub(w0, Fr.mul(ch.v[2], proof.eval_a));
-        w0 = Fr.sub(w0, Fr.mul(ch.v[3], proof.eval_b));
-        w0 = Fr.sub(w0, Fr.mul(ch.v[4], proof.eval_c));
-        w0 = Fr.sub(w0, Fr.mul(ch.v[5], proof.eval_s1));
-        w0 = Fr.sub(w0, Fr.mul(ch.v[6], proof.eval_s2));
-        pol_wxi.set(w0, 0);
-
-        pol_wxi= divPol1(pol_wxi, ch.xi);
-
-        proof.Wxi = await expTau(pol_wxi, "multiexp Wxi");
-
-        let pol_wxiw = new ffjavascript.BigBuffer((zkey.domainSize+3)*n8r);
-        for (let i=0; i<zkey.domainSize+3; i++) {
-            const w = pol_z.slice(i*n8r, (i+1)*n8r);
-            pol_wxiw.set(w, i*n8r);
+        let eval_pi = Fr.zero;
+        for (let i=0; i<publicSignals.length; i++) {
+            const w = Fr.e(publicSignals[i]);
+            eval_pi = Fr.sub(eval_pi, Fr.mul(w, L[i+1]));
         }
-        w0 = pol_wxiw.slice(0, n8r);
-        w0 = Fr.sub(w0, proof.eval_zw);
-        pol_wxiw.set(w0, 0);
 
-        pol_wxiw= divPol1(pol_wxiw, Fr.mul(ch.xi, Fr.w[zkey.power]));
-        proof.Wxiw = await expTau(pol_wxiw, "multiexp Wxiw");
+        if (logger) logger.debug("PI: " + Fr.toString(eval_pi, 16));
+
+        // Compute constant parts of R(X)
+        const coef_ab = Fr.mul(proof.evaluations.eval_a, proof.evaluations.eval_b);
+
+        let e2a = proof.evaluations.eval_a;
+        const betaxi = Fr.mul(challenges.beta, challenges.xi);
+        e2a = Fr.add(e2a, betaxi);
+        e2a = Fr.add(e2a, challenges.gamma);
+
+        let e2b = proof.evaluations.eval_b;
+        e2b = Fr.add(e2b, Fr.mul(betaxi, zkey.k1));
+        e2b = Fr.add(e2b, challenges.gamma);
+
+        let e2c = proof.evaluations.eval_c;
+        e2c = Fr.add(e2c, Fr.mul(betaxi, zkey.k2));
+        e2c = Fr.add(e2c, challenges.gamma);
+
+        const e2 = Fr.mul(Fr.mul(Fr.mul(e2a, e2b), e2c), challenges.alpha);
+
+        let e3a = proof.evaluations.eval_a;
+        e3a = Fr.add(e3a, Fr.mul(challenges.beta, proof.evaluations.eval_s1));
+        e3a = Fr.add(e3a, challenges.gamma);
+
+        let e3b = proof.evaluations.eval_b;
+        e3b = Fr.add(e3b, Fr.mul(challenges.beta, proof.evaluations.eval_s2));
+        e3b = Fr.add(e3b, challenges.gamma);
+
+        let e3 = Fr.mul(e3a, e3b);
+        e3 = Fr.mul(e3, proof.evaluations.eval_zw);
+        e3 = Fr.mul(e3, challenges.alpha);
+
+        const e4 = Fr.mul(eval_l1, challenges.alpha2);
+
+        polynomials.R = new Polynomial(new ffjavascript.BigBuffer((zkey.domainSize + 6) * n8r), curve, logger);
+
+        polynomials.R.add(polynomials.QM, coef_ab);
+        polynomials.R.add(polynomials.QL, proof.evaluations.eval_a);
+        polynomials.R.add(polynomials.QR, proof.evaluations.eval_b);
+        polynomials.R.add(polynomials.QO, proof.evaluations.eval_c);
+        polynomials.R.add(polynomials.QC);
+        polynomials.R.add(polynomials.Z, e2);
+        polynomials.R.sub(polynomials.Sigma3, Fr.mul(e3, challenges.beta));
+        polynomials.R.add(polynomials.Z, e4);
+
+        let tmp = Polynomial.fromPolynomial(polynomials.T3, curve, logger);
+        tmp.mulScalar(Fr.square(challenges.xin));
+        tmp.add(polynomials.T2, challenges.xin);
+        tmp.add(polynomials.T1);
+        tmp.mulScalar(challenges.zh);
+
+        polynomials.R.sub(tmp);
+
+        let r0 = Fr.sub(eval_pi, Fr.mul(e3, Fr.add(proof.evaluations.eval_c, challenges.gamma)));
+        r0 = Fr.sub(r0, e4);
+
+        if (logger) logger.debug("r0: " + Fr.toString(r0, 16));
+
+        polynomials.R.addScalar(r0);
     }
 
-    function hashToFr(transcript) {
-        const v = ffjavascript.Scalar.fromRprBE(new Uint8Array(keccak256$1.arrayBuffer(transcript)));
-        return Fr.e(v);
+    function computeWxi() {
+        polynomials.Wxi = new Polynomial(new ffjavascript.BigBuffer(sDomain + 6 * n8r), curve, logger);
+
+        polynomials.Wxi.add(polynomials.R);
+        polynomials.Wxi.add(polynomials.A, challenges.v[1]);
+        polynomials.Wxi.add(polynomials.B, challenges.v[2]);
+        polynomials.Wxi.add(polynomials.C, challenges.v[3]);
+        polynomials.Wxi.add(polynomials.Sigma1, challenges.v[4]);
+        polynomials.Wxi.add(polynomials.Sigma2, challenges.v[5]);
+
+        polynomials.Wxi.subScalar(Fr.mul(challenges.v[1], proof.evaluations.eval_a));
+        polynomials.Wxi.subScalar(Fr.mul(challenges.v[2], proof.evaluations.eval_b));
+        polynomials.Wxi.subScalar(Fr.mul(challenges.v[3], proof.evaluations.eval_c));
+        polynomials.Wxi.subScalar(Fr.mul(challenges.v[4], proof.evaluations.eval_s1));
+        polynomials.Wxi.subScalar(Fr.mul(challenges.v[5], proof.evaluations.eval_s2));
+
+        polynomials.Wxi.divByZerofier(1, challenges.xi);
     }
 
+    async function computeWxiw() {
+        polynomials.Wxiw = Polynomial.fromPolynomial(polynomials.Z, curve, logger);
+        polynomials.Wxiw.subScalar(proof.evaluations.eval_zw);
 
-    function evalPol(P, x) {
-        const n = P.byteLength / n8r;
-        if (n == 0) return Fr.zero;
-        let res = P.slice((n-1)*n8r, n*n8r);
-        for (let i=n-2; i>=0; i--) {
-            res = Fr.add(Fr.mul(res, x), P.slice(i*n8r, (i+1)*n8r));
-        }
-        return res;
+        polynomials.Wxiw.divByZerofier(1, challenges.xiw);
     }
-
-    function divPol1(P, d) {
-        const n = P.byteLength/n8r;
-        const res = new ffjavascript.BigBuffer(n*n8r);
-        res.set(Fr.zero, (n-1) *n8r);
-        res.set(P.slice((n-1)*n8r, n*n8r), (n-2)*n8r);
-        for (let i=n-3; i>=0; i--) {
-            res.set(
-                Fr.add(
-                    P.slice((i+1)*n8r, (i+2)*n8r), 
-                    Fr.mul(
-                        d, 
-                        res.slice((i+1)*n8r, (i+2)*n8r)
-                    )
-                ),
-                i*n8r
-            );
-        }
-        if (!Fr.eq(
-            P.slice(0, n8r),
-            Fr.mul(
-                Fr.neg(d),
-                res.slice(0, n8r)
-            )
-        )) {
-            throw new Error("Polinomial does not divide");
-        }
-        return res;
-    }
-
-    async function expTau(b, name) {
-        const n = b.byteLength/n8r;
-        const PTauN = PTau.slice(0, n*curve.G1.F.n8*2);
-        const bm = await curve.Fr.batchFromMontgomery(b);
-        let res = await curve.G1.multiExpAffine(PTauN, bm, logger, name);
-        res = curve.G1.toAffine(res);
-        return res;
-    }
-
-
-    async function to4T(A, pz) {
-        pz = pz || []; 
-        let a = await Fr.ifft(A);
-        const a4 = new ffjavascript.BigBuffer(n8r*zkey.domainSize*4);
-        a4.set(a, 0);
-
-        const a1 = new ffjavascript.BigBuffer(n8r*(zkey.domainSize + pz.length));
-        a1.set(a, 0);
-        for (let i= 0; i<pz.length; i++) {
-            a1.set(
-                Fr.add(
-                    a1.slice((zkey.domainSize+i)*n8r, (zkey.domainSize+i+1)*n8r),
-                    pz[i]
-                ),
-                (zkey.domainSize+i)*n8r
-            );
-            a1.set(
-                Fr.sub(
-                    a1.slice(i*n8r, (i+1)*n8r),
-                    pz[i]
-                ),
-                i*n8r
-            );
-        }
-        const A4 = await Fr.fft(a4);
-        return [a1, A4];
-    }
-
-
 }
 
 /*
@@ -8006,10 +9546,10 @@ async function plonk16Prove(zkeyFileName, witnessFileName, logger) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const {unstringifyBigInts: unstringifyBigInts$2} = ffjavascript.utils;
+const {unstringifyBigInts: unstringifyBigInts$5} = ffjavascript.utils;
 
 async function plonkFullProve(_input, wasmFile, zkeyFileName, logger) {
-    const input = unstringifyBigInts$2(_input);
+    const input = unstringifyBigInts$5(_input);
 
     const wtns= {
         type: "mem"
@@ -8036,45 +9576,50 @@ async function plonkFullProve(_input, wasmFile, zkeyFileName, logger) {
     You should have received a copy of the GNU General Public License along with
     snarkjs. If not, see <https://www.gnu.org/licenses/>.
 */
-const {unstringifyBigInts: unstringifyBigInts$1} = ffjavascript.utils;
-const { keccak256 } = jsSha3__default["default"];
+const {unstringifyBigInts: unstringifyBigInts$4} = ffjavascript.utils;
+
 
 
 async function plonkVerify(_vk_verifier, _publicSignals, _proof, logger) {
-    let vk_verifier = unstringifyBigInts$1(_vk_verifier);
-    let proof = unstringifyBigInts$1(_proof);
-    let publicSignals = unstringifyBigInts$1(_publicSignals);
+    let vk_verifier = unstringifyBigInts$4(_vk_verifier);
+    _proof = unstringifyBigInts$4(_proof);
+    let publicSignals = unstringifyBigInts$4(_publicSignals);
 
     const curve = await getCurveFromName(vk_verifier.curve);
 
     const Fr = curve.Fr;
     const G1 = curve.G1;
 
-    proof = fromObjectProof(curve,proof);
-    vk_verifier = fromObjectVk(curve, vk_verifier);
+    if (logger) logger.info("PLONK VERIFIER STARTED");
+
+    let proof = fromObjectProof(curve,_proof);
+    vk_verifier = fromObjectVk$1(curve, vk_verifier);
+
     if (!isWellConstructed(curve, proof)) {
         logger.error("Proof is not well constructed");
         return false;
     }
+
     if (publicSignals.length != vk_verifier.nPublic) {
         logger.error("Invalid number of public inputs");
         return false;
     }
-    const challanges = calculateChallanges(curve, proof, publicSignals);
+    const challenges = calculatechallenges(curve, proof, publicSignals, vk_verifier);
+    
     if (logger) {
-        logger.debug("beta: " + Fr.toString(challanges.beta, 16));    
-        logger.debug("gamma: " + Fr.toString(challanges.gamma, 16));    
-        logger.debug("alpha: " + Fr.toString(challanges.alpha, 16));    
-        logger.debug("xi: " + Fr.toString(challanges.xi, 16));    
-        logger.debug("v1: " + Fr.toString(challanges.v[1], 16));    
-        logger.debug("v6: " + Fr.toString(challanges.v[6], 16));    
-        logger.debug("u: " + Fr.toString(challanges.u, 16));    
+        logger.debug("beta: " + Fr.toString(challenges.beta, 16));    
+        logger.debug("gamma: " + Fr.toString(challenges.gamma, 16));    
+        logger.debug("alpha: " + Fr.toString(challenges.alpha, 16));    
+        logger.debug("xi: " + Fr.toString(challenges.xi, 16));
+        for(let i=1;i<6;i++) {
+            if (logger) logger.debug("v: " + Fr.toString(challenges.v[i], 16));
+        }
+        logger.debug("u: " + Fr.toString(challenges.u, 16));    
     }
-    const L = calculateLagrangeEvaluations(curve, challanges, vk_verifier);
+    const L = calculateLagrangeEvaluations(curve, challenges, vk_verifier);
     if (logger) {
-        logger.debug("Lagrange Evaluations: ");
         for (let i=1; i<L.length; i++) {
-            logger.debug(`L${i}(xi)=` + Fr.toString(L[i], 16));    
+            logger.debug(`L${i}(xi)=` + Fr.toString(L[i], 16));
         }
     }
     
@@ -8083,32 +9628,32 @@ async function plonkVerify(_vk_verifier, _publicSignals, _proof, logger) {
         return false;
     }
 
-    const pl = calculatePl(curve, publicSignals, L);
+    const pi = calculatePI$1(curve, publicSignals, L);
     if (logger) {
-        logger.debug("Pl: " + Fr.toString(pl, 16));
+        logger.debug("PI(xi): " + Fr.toString(pi, 16));
+    }
+    
+    const r0 = calculateR0(curve, proof, challenges, pi, L[1]);
+    if (logger) {
+        logger.debug("r0: " + Fr.toString(r0, 16));
     }
 
-    const t = calculateT(curve, proof, challanges, pl, L[1]);
-    if (logger) {
-        logger.debug("t: " + Fr.toString(t, 16));
-    }
-
-    const D = calculateD(curve, proof, challanges, vk_verifier, L[1]);
+    const D = calculateD(curve, proof, challenges, vk_verifier, L[1]);
     if (logger) {
         logger.debug("D: " + G1.toString(G1.toAffine(D), 16));
     }
 
-    const F = calculateF(curve, proof, challanges, vk_verifier, D);
+    const F = calculateF(curve, proof, challenges, vk_verifier, D);
     if (logger) {
         logger.debug("F: " + G1.toString(G1.toAffine(F), 16));
     }
 
-    const E = calculateE(curve, proof, challanges, vk_verifier, t);
+    const E = calculateE(curve, proof, challenges, r0);
     if (logger) {
         logger.debug("E: " + G1.toString(G1.toAffine(E), 16));
     }
 
-    const res = await isValidPairing(curve, proof, challanges, vk_verifier, E, F);
+    const res = await isValidPairing$1(curve, proof, challenges, vk_verifier, E, F);
 
     if (logger) {
         if (res) {
@@ -8119,7 +9664,6 @@ async function plonkVerify(_vk_verifier, _publicSignals, _proof, logger) {
     }
 
     return res;
-
 }
 
 
@@ -8140,13 +9684,12 @@ function fromObjectProof(curve, proof) {
     res.eval_zw = Fr.fromObject(proof.eval_zw);
     res.eval_s1 = Fr.fromObject(proof.eval_s1);
     res.eval_s2 = Fr.fromObject(proof.eval_s2);
-    res.eval_r = Fr.fromObject(proof.eval_r);
     res.Wxi = G1.fromObject(proof.Wxi);
     res.Wxiw = G1.fromObject(proof.Wxiw);
     return res;
 }
 
-function fromObjectVk(curve, vk) {
+function fromObjectVk$1(curve, vk) {
     const G1 = curve.G1;
     const G2 = curve.G2;
     const Fr = curve.Fr;
@@ -8180,232 +9723,209 @@ function isWellConstructed(curve, proof) {
     return true;
 }
 
-function calculateChallanges(curve, proof, publicSignals) {
-    const G1 = curve.G1;
+function calculatechallenges(curve, proof, publicSignals, vk) {
     const Fr = curve.Fr;
-    const n8r = curve.Fr.n8;
     const res = {};
+    const transcript = new Keccak256Transcript(curve);
 
-    const transcript1 = new Uint8Array(publicSignals.length*n8r + G1.F.n8*2*3);
-    for (let i=0; i<publicSignals.length; i++) {
-        Fr.toRprBE(transcript1, i*n8r, Fr.e(publicSignals[i]));
+    // Challenge round 2: beta and gamma
+    transcript.addPolCommitment(vk.Qm);
+    transcript.addPolCommitment(vk.Ql);
+    transcript.addPolCommitment(vk.Qr);
+    transcript.addPolCommitment(vk.Qo);
+    transcript.addPolCommitment(vk.Qc);
+    transcript.addPolCommitment(vk.S1);
+    transcript.addPolCommitment(vk.S2);
+    transcript.addPolCommitment(vk.S3);
+
+    for (let i = 0; i < publicSignals.length; i++) {
+        transcript.addScalar(Fr.e(publicSignals[i]));
     }
-    G1.toRprUncompressed(transcript1, publicSignals.length*n8r + 0, proof.A);
-    G1.toRprUncompressed(transcript1, publicSignals.length*n8r + G1.F.n8*2, proof.B);
-    G1.toRprUncompressed(transcript1, publicSignals.length*n8r + G1.F.n8*4, proof.C);
 
-    res.beta = hashToFr(curve, transcript1);
+    transcript.addPolCommitment(proof.A);
+    transcript.addPolCommitment(proof.B);
+    transcript.addPolCommitment(proof.C);
 
-    const transcript2 = new Uint8Array(n8r);
-    Fr.toRprBE(transcript2, 0, res.beta);
-    res.gamma = hashToFr(curve, transcript2);
+    res.beta = transcript.getChallenge();
 
-    const transcript3 = new Uint8Array(G1.F.n8*2);
-    G1.toRprUncompressed(transcript3, 0, proof.Z);
-    res.alpha = hashToFr(curve, transcript3);
+    transcript.reset();
+    transcript.addScalar(res.beta);
+    res.gamma = transcript.getChallenge();
 
-    const transcript4 = new Uint8Array(G1.F.n8*2*3);
-    G1.toRprUncompressed(transcript4, 0, proof.T1);
-    G1.toRprUncompressed(transcript4, G1.F.n8*2, proof.T2);
-    G1.toRprUncompressed(transcript4, G1.F.n8*4, proof.T3);
-    res.xi = hashToFr(curve, transcript4);
+    // Challenge round 3: alpha
+    transcript.reset();
+    transcript.addScalar(res.beta);
+    transcript.addScalar(res.gamma);
+    transcript.addPolCommitment(proof.Z);
+    res.alpha = transcript.getChallenge();
 
-    const transcript5 = new Uint8Array(n8r*7);
-    Fr.toRprBE(transcript5, 0, proof.eval_a);
-    Fr.toRprBE(transcript5, n8r, proof.eval_b);
-    Fr.toRprBE(transcript5, n8r*2, proof.eval_c);
-    Fr.toRprBE(transcript5, n8r*3, proof.eval_s1);
-    Fr.toRprBE(transcript5, n8r*4, proof.eval_s2);
-    Fr.toRprBE(transcript5, n8r*5, proof.eval_zw);
-    Fr.toRprBE(transcript5, n8r*6, proof.eval_r);
+    // Challenge round 4: xi
+    transcript.reset();
+    transcript.addScalar(res.alpha);
+    transcript.addPolCommitment(proof.T1);
+    transcript.addPolCommitment(proof.T2);
+    transcript.addPolCommitment(proof.T3);
+    res.xi = transcript.getChallenge();
+    
+    // Challenge round 5: v
+    transcript.reset();
+    transcript.addScalar(res.xi);
+    transcript.addScalar(proof.eval_a);
+    transcript.addScalar(proof.eval_b);
+    transcript.addScalar(proof.eval_c);
+    transcript.addScalar(proof.eval_s1);
+    transcript.addScalar(proof.eval_s2);
+    transcript.addScalar(proof.eval_zw);
     res.v = [];
-    res.v[1] = hashToFr(curve, transcript5);
+    res.v[1] = transcript.getChallenge();
 
-    for (let i=2; i<=6; i++ ) res.v[i] = Fr.mul(res.v[i-1], res.v[1]);
+    for (let i=2; i<6; i++ ) res.v[i] = Fr.mul(res.v[i-1], res.v[1]);
 
-    const transcript6 = new Uint8Array(G1.F.n8*2*2);
-    G1.toRprUncompressed(transcript6, 0, proof.Wxi);
-    G1.toRprUncompressed(transcript6, G1.F.n8*2, proof.Wxiw);
-    res.u = hashToFr(curve, transcript6);
+    // Challenge: u
+    transcript.reset();
+    transcript.addPolCommitment(proof.Wxi);
+    transcript.addPolCommitment(proof.Wxiw);
+    res.u = transcript.getChallenge();
 
     return res;
 }
 
-function calculateLagrangeEvaluations(curve, challanges, vk) {
+function calculateLagrangeEvaluations(curve, challenges, vk) {
     const Fr = curve.Fr;
 
-    let xin = challanges.xi;
+    let xin = challenges.xi;
     let domainSize = 1;
     for (let i=0; i<vk.power; i++) {
         xin = Fr.square(xin);
         domainSize *= 2;
     }
-    challanges.xin = xin;
+    challenges.xin = xin;
 
-    challanges.zh = Fr.sub(xin, Fr.one);
+    challenges.zh = Fr.sub(xin, Fr.one);
+
     const L = [];
 
     const n = Fr.e(domainSize);
     let w = Fr.one;
     for (let i=1; i<=Math.max(1, vk.nPublic); i++) {
-        L[i] = Fr.div(Fr.mul(w, challanges.zh), Fr.mul(n, Fr.sub(challanges.xi, w)));
+        L[i] = Fr.div(Fr.mul(w, challenges.zh), Fr.mul(n, Fr.sub(challenges.xi, w)));
         w = Fr.mul(w, Fr.w[vk.power]);
     }
 
     return L;
 }
 
-function hashToFr(curve, transcript) {
-    const v = ffjavascript.Scalar.fromRprBE(new Uint8Array(keccak256.arrayBuffer(transcript)));
-    return curve.Fr.e(v);
-}
-
-function calculatePl(curve, publicSignals, L) {
+function calculatePI$1(curve, publicSignals, L) {
     const Fr = curve.Fr;
 
-    let pl = Fr.zero;
-    for (let i=0; i<publicSignals.length; i++) {
+    let pi = Fr.zero;
+    for (let i=0; i<publicSignals.length; i++) {        
         const w = Fr.e(publicSignals[i]);
-        pl = Fr.sub(pl, Fr.mul(w, L[i+1]));
+        pi = Fr.sub(pi, Fr.mul(w, L[i+1]));
     }
-    return pl;
+    return pi;
 }
 
-function calculateT(curve, proof, challanges, pl, l1) {
+function calculateR0(curve, proof, challenges, pi, l1) {
     const Fr = curve.Fr;
-    let num = proof.eval_r;
-    num = Fr.add(num, pl);
 
-    let e1 = proof.eval_a;
-    e1 = Fr.add(e1, Fr.mul(challanges.beta, proof.eval_s1));
-    e1 = Fr.add(e1, challanges.gamma);
+    const e1 = pi;
 
-    let e2 = proof.eval_b;
-    e2 = Fr.add(e2, Fr.mul(challanges.beta, proof.eval_s2));
-    e2 = Fr.add(e2, challanges.gamma);
+    const e2 = Fr.mul(l1, Fr.square(challenges.alpha));
 
-    let e3 = proof.eval_c;
-    e3 = Fr.add(e3, challanges.gamma);
+    let e3a = Fr.add(proof.eval_a, Fr.mul(challenges.beta, proof.eval_s1));
+    e3a = Fr.add(e3a, challenges.gamma);
 
-    let e = Fr.mul(Fr.mul(e1, e2), e3);
-    e = Fr.mul(e, proof.eval_zw);
-    e = Fr.mul(e, challanges.alpha);
+    let e3b = Fr.add(proof.eval_b, Fr.mul(challenges.beta, proof.eval_s2));
+    e3b = Fr.add(e3b, challenges.gamma);
 
-    num = Fr.sub(num, e);
+    let e3c = Fr.add(proof.eval_c, challenges.gamma);
 
-    num = Fr.sub(num, Fr.mul(l1, Fr.square(challanges.alpha)));
+    let e3 = Fr.mul(Fr.mul(e3a, e3b), e3c);
+    e3 = Fr.mul(e3, proof.eval_zw);
+    e3 = Fr.mul(e3, challenges.alpha);
 
-    const t = Fr.div(num, challanges.zh);
+    const r0 = Fr.sub(Fr.sub(e1, e2), e3);
 
-    return t;
+    return r0;
 }
 
-function calculateD(curve, proof, challanges, vk, l1) {
+function calculateD(curve, proof, challenges, vk, l1) {
     const G1 = curve.G1;
     const Fr = curve.Fr;
+    
+    let d1 = G1.timesFr(vk.Qm, Fr.mul(proof.eval_a, proof.eval_b));
+    d1 = G1.add(d1, G1.timesFr(vk.Ql, proof.eval_a));
+    d1 = G1.add(d1, G1.timesFr(vk.Qr, proof.eval_b));
+    d1 = G1.add(d1, G1.timesFr(vk.Qo, proof.eval_c));
+    d1 = G1.add(d1, vk.Qc);
 
-    let s1 = Fr.mul(Fr.mul(proof.eval_a, proof.eval_b), challanges.v[1]);
-    let res = G1.timesFr(vk.Qm, s1);
+    const betaxi = Fr.mul(challenges.beta, challenges.xi);
 
-    let s2 = Fr.mul(proof.eval_a, challanges.v[1]);
-    res = G1.add(res, G1.timesFr(vk.Ql, s2));
+    const d2a1 = Fr.add(Fr.add(proof.eval_a, betaxi), challenges.gamma);
+    const d2a2 = Fr.add(Fr.add(proof.eval_b, Fr.mul(betaxi, vk.k1)), challenges.gamma);
+    const d2a3 = Fr.add(Fr.add(proof.eval_c, Fr.mul(betaxi, vk.k2)), challenges.gamma);
 
-    let s3 = Fr.mul(proof.eval_b, challanges.v[1]);
-    res = G1.add(res, G1.timesFr(vk.Qr, s3));
+    const d2a = Fr.mul(Fr.mul(Fr.mul(d2a1, d2a2), d2a3), challenges.alpha);
 
-    let s4 = Fr.mul(proof.eval_c, challanges.v[1]);
-    res = G1.add(res, G1.timesFr(vk.Qo, s4));
+    const d2b = Fr.mul(l1, Fr.square(challenges.alpha));
 
-    res = G1.add(res, G1.timesFr(vk.Qc, challanges.v[1]));
+    const d2 = G1.timesFr(proof.Z, Fr.add(Fr.add(d2a, d2b), challenges.u));
 
-    const betaxi = Fr.mul(challanges.beta, challanges.xi);
-    let s6a = proof.eval_a;
-    s6a = Fr.add(s6a, betaxi);
-    s6a = Fr.add(s6a, challanges.gamma);
+    const d3a = Fr.add(Fr.add(proof.eval_a, Fr.mul(challenges.beta, proof.eval_s1)), challenges.gamma);
+    const d3b = Fr.add(Fr.add(proof.eval_b, Fr.mul(challenges.beta, proof.eval_s2)), challenges.gamma);
+    const d3c = Fr.mul(Fr.mul(challenges.alpha, challenges.beta), proof.eval_zw);
 
-    let s6b = proof.eval_b;
-    s6b = Fr.add(s6b, Fr.mul(betaxi, vk.k1));
-    s6b = Fr.add(s6b, challanges.gamma);
+    const d3 = G1.timesFr(vk.S3, Fr.mul(Fr.mul(d3a, d3b), d3c));
+    
+    const d4low = proof.T1;
+    const d4mid = G1.timesFr(proof.T2, challenges.xin);
+    const d4high = G1.timesFr(proof.T3, Fr.square(challenges.xin));
+    let d4 = G1.add(d4low, G1.add(d4mid, d4high));
+    d4 = G1.timesFr(d4, challenges.zh);
 
-    let s6c = proof.eval_c;
-    s6c = Fr.add(s6c, Fr.mul(betaxi, vk.k2));
-    s6c = Fr.add(s6c, challanges.gamma);
+    const d = G1.sub(G1.sub(G1.add(d1, d2), d3), d4);
 
-    let s6 = Fr.mul(Fr.mul(s6a, s6b), s6c);
-    s6 = Fr.mul(s6, Fr.mul(challanges.alpha, challanges.v[1]));
+    return d;
+}
 
-    let s6d = Fr.mul(Fr.mul(l1, Fr.square(challanges.alpha)), challanges.v[1]);
-    s6 = Fr.add(s6, s6d);
+function calculateF(curve, proof, challenges, vk, D) {
+    const G1 = curve.G1;
 
-    s6 = Fr.add(s6, challanges.u);
-    res = G1.add(res, G1.timesFr(proof.Z, s6));
-
-
-    let s7a = proof.eval_a;
-    s7a = Fr.add(s7a, Fr.mul(challanges.beta, proof.eval_s1));
-    s7a = Fr.add(s7a, challanges.gamma);
-
-    let s7b = proof.eval_b;
-    s7b = Fr.add(s7b, Fr.mul(challanges.beta, proof.eval_s2));
-    s7b = Fr.add(s7b, challanges.gamma);
-
-    let s7 = Fr.mul(s7a, s7b);
-    s7 = Fr.mul(s7, challanges.alpha);
-    s7 = Fr.mul(s7, challanges.v[1]);
-    s7 = Fr.mul(s7, challanges.beta);
-    s7 = Fr.mul(s7, proof.eval_zw);
-    res = G1.sub(res, G1.timesFr(vk.S3, s7));
+    let res = G1.add(D, G1.timesFr(proof.A, challenges.v[1]));
+    res = G1.add(res, G1.timesFr(proof.B, challenges.v[2]));
+    res = G1.add(res, G1.timesFr(proof.C, challenges.v[3]));
+    res = G1.add(res, G1.timesFr(vk.S1, challenges.v[4]));
+    res = G1.add(res, G1.timesFr(vk.S2, challenges.v[5]));
 
     return res;
 }
 
-function calculateF(curve, proof, challanges, vk, D) {
+function calculateE(curve, proof, challenges, r0) {
     const G1 = curve.G1;
     const Fr = curve.Fr;
 
-    let res = proof.T1;
+    let e = Fr.add(Fr.neg(r0), Fr.mul(challenges.v[1], proof.eval_a));
+    e = Fr.add(e, Fr.mul(challenges.v[2], proof.eval_b));
+    e = Fr.add(e, Fr.mul(challenges.v[3], proof.eval_c));
+    e = Fr.add(e, Fr.mul(challenges.v[4], proof.eval_s1));
+    e = Fr.add(e, Fr.mul(challenges.v[5], proof.eval_s2));
+    e = Fr.add(e, Fr.mul(challenges.u, proof.eval_zw));
 
-    res = G1.add(res, G1.timesFr(proof.T2, challanges.xin));
-    res = G1.add(res, G1.timesFr(proof.T3, Fr.square(challanges.xin)));
-    res = G1.add(res, D);
-    res = G1.add(res, G1.timesFr(proof.A, challanges.v[2]));
-    res = G1.add(res, G1.timesFr(proof.B, challanges.v[3]));
-    res = G1.add(res, G1.timesFr(proof.C, challanges.v[4]));
-    res = G1.add(res, G1.timesFr(vk.S1, challanges.v[5]));
-    res = G1.add(res, G1.timesFr(vk.S2, challanges.v[6]));
+    const res = G1.timesFr(G1.one, e);
 
     return res;
 }
 
-
-function calculateE(curve, proof, challanges, vk, t) {
-    const G1 = curve.G1;
-    const Fr = curve.Fr;
-
-    let s = t;
-
-    s = Fr.add(s, Fr.mul(challanges.v[1], proof.eval_r));
-    s = Fr.add(s, Fr.mul(challanges.v[2], proof.eval_a));
-    s = Fr.add(s, Fr.mul(challanges.v[3], proof.eval_b));
-    s = Fr.add(s, Fr.mul(challanges.v[4], proof.eval_c));
-    s = Fr.add(s, Fr.mul(challanges.v[5], proof.eval_s1));
-    s = Fr.add(s, Fr.mul(challanges.v[6], proof.eval_s2));
-    s = Fr.add(s, Fr.mul(challanges.u, proof.eval_zw));
-
-    const res = G1.timesFr(G1.one, s);
-
-    return res;
-}
-
-async function isValidPairing(curve, proof, challanges, vk, E, F) {
+async function isValidPairing$1(curve, proof, challenges, vk, E, F) {
     const G1 = curve.G1;
     const Fr = curve.Fr;
 
     let A1 = proof.Wxi;
-    A1 = G1.add(A1, G1.timesFr(proof.Wxiw, challanges.u));
+    A1 = G1.add(A1, G1.timesFr(proof.Wxiw, challenges.u));
 
-    let B1 = G1.timesFr(proof.Wxi, challanges.xi);
-    const s = Fr.mul(Fr.mul(challanges.u, challanges.xi), Fr.w[vk.power]);
+    let B1 = G1.timesFr(proof.Wxi, challenges.xi);
+    const s = Fr.mul(Fr.mul(challenges.u, challenges.xi), Fr.w[vk.power]);
     B1 = G1.add(B1, G1.timesFr(proof.Wxiw, s));
     B1 = G1.add(B1, F);
     B1 = G1.sub(B1, E);
@@ -8416,7 +9936,6 @@ async function isValidPairing(curve, proof, challanges, vk, E, F) {
     );
 
     return res;
-
 }
 
 /*
@@ -8437,13 +9956,9 @@ async function isValidPairing(curve, proof, challanges, vk, E, F) {
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
-const { unstringifyBigInts} = ffjavascript.utils;
+const { unstringifyBigInts: unstringifyBigInts$3} = ffjavascript.utils;
 
-function i2hex(i) {
-    return ("0" + i.toString(16)).slice(-2);
-}
-
-function p256(n) {
+function p256$1(n) {
     let nstr = n.toString(16);
     while (nstr.length < 64) nstr = "0"+nstr;
     nstr = `"0x${nstr}"`;
@@ -8451,42 +9966,35 @@ function p256(n) {
 }
 
 async function plonkExportSolidityCallData(_proof, _pub) {
-    const proof = unstringifyBigInts(_proof);
-    const pub = unstringifyBigInts(_pub);
+    const proof = unstringifyBigInts$3(_proof);
+    const pub = unstringifyBigInts$3(_pub);
 
     const curve = await getCurveFromName(proof.curve);
-    const G1 = curve.G1;
-    const Fr = curve.Fr;
+    curve.G1;
+    curve.Fr;
 
     let inputs = "";
     for (let i=0; i<pub.length; i++) {
         if (inputs != "") inputs = inputs + ",";
-        inputs = inputs + p256(pub[i]);
+        inputs = inputs + p256$1(pub[i]);
     }
 
-    const proofBuff = new Uint8Array(G1.F.n8*2*9 + Fr.n8*7);
-    G1.toRprUncompressed(proofBuff, 0, G1.e(proof.A));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*2, G1.e(proof.B));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*4, G1.e(proof.C));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*6, G1.e(proof.Z));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*8, G1.e(proof.T1));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*10, G1.e(proof.T2));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*12, G1.e(proof.T3));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*14, G1.e(proof.Wxi));
-    G1.toRprUncompressed(proofBuff, G1.F.n8*16, G1.e(proof.Wxiw));
-    Fr.toRprBE(proofBuff, G1.F.n8*18 , Fr.e(proof.eval_a));
-    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8, Fr.e(proof.eval_b));
-    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*2, Fr.e(proof.eval_c));
-    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*3, Fr.e(proof.eval_s1));
-    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*4, Fr.e(proof.eval_s2));
-    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*5, Fr.e(proof.eval_zw));
-    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*6, Fr.e(proof.eval_r));
-
-    const proofHex = Array.from(proofBuff).map(i2hex).join("");
-
-    const S="0x"+proofHex+",["+inputs+"]";
-
-    return S;
+    return `[${p256$1(proof.A[0])}, ${p256$1(proof.A[1])},` +
+    `${p256$1(proof.B[0])},${p256$1(proof.B[1])},` +
+    `${p256$1(proof.C[0])},${p256$1(proof.C[1])},` +
+    `${p256$1(proof.Z[0])},${p256$1(proof.Z[1])},` +
+    `${p256$1(proof.T1[0])},${p256$1(proof.T1[1])},` +
+    `${p256$1(proof.T2[0])},${p256$1(proof.T2[1])},` +
+    `${p256$1(proof.T3[0])},${p256$1(proof.T3[1])},` +
+    `${p256$1(proof.Wxi[0])},${p256$1(proof.Wxi[1])},` +
+    `${p256$1(proof.Wxiw[0])},${p256$1(proof.Wxiw[1])},` +
+    `${p256$1(proof.eval_a)},` + 
+    `${p256$1(proof.eval_b)},` + 
+    `${p256$1(proof.eval_c)},` + 
+    `${p256$1(proof.eval_s1)},` + 
+    `${p256$1(proof.eval_s2)},` + 
+    `${p256$1(proof.eval_zw)}]` + 
+    `[${inputs}]`;
 }
 
 /*
@@ -8517,6 +10025,2811 @@ var plonk = /*#__PURE__*/Object.freeze({
     exportSolidityCallData: plonkExportSolidityCallData
 });
 
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+// We export to zkey the signals and values of the a, b, c, ql, qr, qm, qo and qc
+
+// a, b and c are signals id (32-bit integers)
+// ql, qr, qm, qo and qc are field values
+
+function getFFlonkConstantConstraint(signal1, Fr) {
+    return [signal1, 0, 0, Fr.one, Fr.zero, Fr.zero, Fr.zero, Fr.zero];
+}
+
+function getFFlonkAdditionConstraint(signal1, signal2, signalOut, ql, qr, qm, qo, qc) {
+    return [signal1, signal2, signalOut, ql, qr, qm, qo, qc];
+}
+
+function getFFlonkMultiplicationConstraint(signal1, signal2, signalOut, ql, qr, qm, qo, qc, Fr) {
+    return [signal1, signal2, signalOut, ql, qr, qm, qo, qc];
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+const LINEAR_COMBINATION_NULLABLE = 0;
+const LINEAR_COMBINATION_CONSTANT = 1;
+const LINEAR_COMBINATION_VARIABLE = 2;
+
+class r1csConstraintProcessor {
+    constructor(Fr, fnGetConstantConstraint, fnGetAdditionConstraint, fnGetMultiplicationConstraint, logger) {
+        this.Fr = Fr;
+        this.logger = logger;
+        this.fnGetAdditionConstraint = fnGetAdditionConstraint;
+        this.fnGetMultiplicationConstraint = fnGetMultiplicationConstraint;
+    }
+
+    processR1csConstraint(settings, lcA, lcB, lcC) {
+        this.normalizeLinearCombination(lcA);
+        this.normalizeLinearCombination(lcB);
+        this.normalizeLinearCombination(lcC);
+
+        const lctA = this.getLinearCombinationType(lcA);
+        const lctB = this.getLinearCombinationType(lcB);
+
+        if ((lctA === LINEAR_COMBINATION_NULLABLE) || (lctB === LINEAR_COMBINATION_NULLABLE)) {
+            return this.processR1csAdditionConstraint(settings, lcC);
+        } else if (lctA === LINEAR_COMBINATION_CONSTANT) {
+            const lcCC = this.joinLinearCombinations(lcB, lcC, lcA[0]);
+            return this.processR1csAdditionConstraint(settings, lcCC);
+        } else if (lctB === LINEAR_COMBINATION_CONSTANT) {
+            const lcCC = this.joinLinearCombinations(lcA, lcC, lcB[0]);
+            return this.processR1csAdditionConstraint(settings, lcCC);
+        } else {
+            return this.processR1csMultiplicationConstraint(settings, lcA, lcB, lcC);
+        }
+    }
+
+    getLinearCombinationType(linCom) {
+        // let k = this.Fr.zero;
+        //
+        // const signalIds = Object.keys(linCom);
+        // for (let i = 0; i < signalIds.length; i++) {
+        //     if (signalIds[i] === "0") {
+        //         k = this.Fr.add(k, linCom[signalIds[i]]);
+        //     } else {
+        //         return LINEAR_COMBINATION_VARIABLE;
+        //     }
+        // }
+        //
+        // if (!this.Fr.eq(k, this.Fr.zero)) return LINEAR_COMBINATION_CONSTANT;
+        //
+        // return LINEAR_COMBINATION_NULLABLE;
+
+        let k = this.Fr.zero;
+        let n = 0;
+        const ss = Object.keys(linCom);
+        for (let i = 0; i < ss.length; i++) {
+            if (linCom[ss[i]] == 0n) {
+                delete linCom[ss[i]];
+            } else if (ss[i] == 0) {
+                k = this.Fr.add(k, linCom[ss[i]]);
+            } else {
+                n++;
+            }
+        }
+        if (n > 0) return LINEAR_COMBINATION_VARIABLE;
+        if (!this.Fr.isZero(k)) return LINEAR_COMBINATION_CONSTANT;
+        return LINEAR_COMBINATION_NULLABLE;
+    }
+
+    normalizeLinearCombination(linCom) {
+        const signalIds = Object.keys(linCom);
+        for (let i = 0; i < signalIds.length; i++) {
+            if (this.Fr.isZero(linCom[signalIds[i]])) delete linCom[signalIds[i]];
+        }
+
+        return linCom;
+    }
+
+    joinLinearCombinations(linCom1, linCom2, k) {
+        const res = {};
+
+        // for (let s in linCom1) {
+        //     const val = this.Fr.mul(k, linCom1[s]);
+        //     res[s] = !(s in res) ? val : this.Fr.add(val, res[s]);
+        // }
+        //
+        // for (let s in linCom2) {
+        //     const val = this.Fr.mul(k, linCom2[s]);
+        //     res[s] = !(s in res) ? val : this.Fr.add(val, res[s]);
+        // }
+
+        for (let s in linCom1) {
+            if (typeof res[s] == "undefined") {
+                res[s] = this.Fr.mul(k, linCom1[s]);
+            } else {
+                res[s] = this.Fr.add(res[s], this.Fr.mul(k, linCom1[s]));
+            }
+        }
+
+        for (let s in linCom2) {
+            if (typeof res[s] == "undefined") {
+                res[s] = linCom2[s];
+            } else {
+                res[s] = this.Fr.add(res[s], linCom2[s]);
+            }
+        }
+
+        return this.normalizeLinearCombination(res);
+    }
+
+    reduceCoefs(settings, constraintsArr, additionsArr, linCom, maxC) {
+        const res = {
+            k: this.Fr.zero,
+            signals: [],
+            coefs: []
+        };
+        const cs = [];
+
+        for (let signalId in linCom) {
+            if (signalId == 0) {
+                res.k = this.Fr.add(res.k, linCom[signalId]);
+            } else if (linCom[signalId] != 0n) {
+                cs.push([Number(signalId), linCom[signalId]]);
+            }
+        }
+
+        while (cs.length > maxC) {
+            const c1 = cs.shift();
+            const c2 = cs.shift();
+            const so = settings.nVars++;
+
+            const constraints = this.fnGetAdditionConstraint(
+                c1[0], c2[0], so,
+                this.Fr.neg(c1[1]), this.Fr.neg(c2[1]), this.Fr.zero, this.Fr.one, this.Fr.zero);
+
+            constraintsArr.push(constraints);
+            additionsArr.push([c1[0], c2[0], c1[1], c2[1]]);
+
+            cs.push([so, this.Fr.one]);
+        }
+
+        for (let i = 0; i < cs.length; i++) {
+            res.signals[i] = cs[i][0];
+            res.coefs[i] = cs[i][1];
+        }
+
+        while (res.coefs.length < maxC) {
+            res.signals.push(0);
+            res.coefs.push(this.Fr.zero);
+        }
+
+        return res;
+    }
+
+    processR1csAdditionConstraint(settings, linCom) {
+        const constraintsArr = [];
+        const additionsArr = [];
+
+        const C = this.reduceCoefs(settings, constraintsArr, additionsArr, linCom, 3);
+
+        const constraints = this.fnGetAdditionConstraint(
+            C.signals[0], C.signals[1], C.signals[2],
+            C.coefs[0], C.coefs[1], this.Fr.zero, C.coefs[2], C.k);
+
+        constraintsArr.push(constraints);
+
+        return [constraintsArr, additionsArr];
+    }
+
+    processR1csMultiplicationConstraint(settings, lcA, lcB, lcC) {
+        const constraintsArr = [];
+        const additionsArr = [];
+
+        const A = this.reduceCoefs(settings, constraintsArr, additionsArr, lcA, 1);
+        const B = this.reduceCoefs(settings, constraintsArr, additionsArr, lcB, 1);
+        const C = this.reduceCoefs(settings, constraintsArr, additionsArr, lcC, 1);
+
+        const constraints = this.fnGetMultiplicationConstraint(
+            A.signals[0], B.signals[0], C.signals[0],
+            this.Fr.mul(A.coefs[0], B.k),
+            this.Fr.mul(A.k, B.coefs[0]),
+            this.Fr.mul(A.coefs[0], B.coefs[0]),
+            this.Fr.neg(C.coefs[0]),
+            this.Fr.sub(this.Fr.mul(A.k, B.k), C.k));
+
+        constraintsArr.push(constraints);
+
+        return [constraintsArr, additionsArr];
+    }
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+class CPolynomial {
+    constructor(n, curve, logger) {
+        this.n = n;
+        this.polynomials = Array(n).fill(undefined);
+        this.curve = curve;
+        this.Fr = curve.Fr;
+        this.G1 = curve.G1;
+        this.logger = logger;
+    }
+
+    addPolynomial(position, polynomial) {
+        if (position > this.n - 1) {
+            throw new Error("CPolynomial:addPolynomial, cannot add a polynomial to a position greater than n-1");
+        }
+
+        this.polynomials[position] = polynomial;
+    }
+
+    degree() {
+        let degrees = this.polynomials.map(
+            (polynomial, index) => polynomial === undefined ? 0 : polynomial.degree() * this.n + index);
+        return Math.max(...degrees);
+    }
+
+    getPolynomial() {
+        let degrees = this.polynomials.map(polynomial => polynomial === undefined ? 0 : polynomial.degree());
+        const maxDegree = this.degree();
+        const lengthBuffer = 2 ** (log2(maxDegree - 1) + 1);
+        const sFr = this.Fr.n8;
+
+        let polynomial = new Polynomial(new ffjavascript.BigBuffer(lengthBuffer * sFr), this.curve, this.logger);
+
+        for (let i = 0; i < maxDegree; i++) {
+            const i_n8 = i * sFr;
+            const i_sFr = i_n8 * this.n;
+
+            for (let j = 0; j < this.n; j++) {
+                if (this.polynomials[j] !== undefined) {
+                    if (i <= degrees[j]) polynomial.coef.set(this.polynomials[j].coef.slice(i_n8, i_n8 + sFr), i_sFr + j * sFr);
+                }
+            }
+        }
+
+        return polynomial;
+    }
+
+    async multiExponentiation(PTau, name) {
+        let polynomial = this.getPolynomial();
+        const n = polynomial.coef.byteLength / this.Fr.n8;
+        const PTauN = PTau.slice(0, n * this.G1.F.n8 * 2);
+        const bm = await this.Fr.batchFromMontgomery(polynomial.coef);
+        let res = await this.G1.multiExpAffine(PTauN, bm, this.logger, name);
+        res = this.G1.toAffine(res);
+        return res;
+    }
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+
+async function fflonkSetup(r1csFilename, ptauFilename, zkeyFilename, logger) {
+    if (logger) logger.info("FFLONK SETUP STARTED");
+
+    if (globalThis.gc) globalThis.gc();
+
+    // Read PTau file
+    if (logger) logger.info("> Reading PTau file");
+    const {fd: fdPTau, sections: pTauSections} = await binFileUtils.readBinFile(ptauFilename, "ptau", 1, 1 << 22, 1 << 24);
+    if (!pTauSections[12]) {
+        throw new Error("Powers of Tau is not well prepared. Section 12 missing.");
+    }
+
+    // Get curve defined in PTau
+    if (logger) logger.info("> Getting curve from PTau settings");
+    const {curve} = await readPTauHeader(fdPTau, pTauSections);
+
+    // Read r1cs file
+    if (logger) logger.info("> Reading r1cs file");
+    const {fd: fdR1cs, sections: sectionsR1cs} = await binFileUtils.readBinFile(r1csFilename, "r1cs", 1, 1 << 22, 1 << 24);
+    const r1cs = await r1csfile.readR1csFd(fdR1cs, sectionsR1cs, {loadConstraints: false, loadCustomGates: true});
+
+    // Potential error checks
+    if (r1cs.prime !== curve.r) {
+        throw new Error("r1cs curve does not match powers of tau ceremony curve");
+    }
+
+    // Initializations
+    const Fr = curve.Fr;
+
+    const sFr = curve.Fr.n8;
+    const sG1 = curve.G1.F.n8 * 2;
+    const sG2 = curve.G2.F.n8 * 2;
+
+    let polynomials = {};
+    let evaluations = {};
+    let PTau;
+
+    let settings = {
+        nVars: r1cs.nVars,
+        nPublic: r1cs.nOutputs + r1cs.nPubInputs
+    };
+
+    const plonkConstraints = new BigArray();
+    let plonkAdditions = new BigArray();
+
+    // Process constraints inside r1cs
+    if (logger) logger.info("> Processing FFlonk constraints");
+    await computeFFConstraints(curve.Fr, r1cs, logger);
+    if (globalThis.gc) globalThis.gc();
+
+    // As the t polynomial is n+5 whe need at least a power of 4
+    //TODO check!!!!
+    // NOTE : plonkConstraints + 2 = #constraints + blinding coefficients for each wire polynomial
+    settings.cirPower = Math.max(FF_T_POL_DEG_MIN, log2((plonkConstraints.length + 2) - 1) + 1);
+    settings.domainSize = 2 ** settings.cirPower;
+
+    if (pTauSections[2][0].size < (settings.domainSize * 9 + 18) * sG1) {
+        throw new Error("Powers of Tau is not big enough for this circuit size. Section 2 too small.");
+    }
+    if (pTauSections[3][0].size < sG2) {
+        throw new Error("Powers of Tau is not well prepared. Section 3 too small.");
+    }
+
+    if (logger) {
+        logger.info("----------------------------");
+        logger.info("  FFLONK SETUP SETTINGS");
+        logger.info(`  Curve:         ${curve.name}`);
+        logger.info(`  Circuit power: ${settings.cirPower}`);
+        logger.info(`  Domain size:   ${settings.domainSize}`);
+        logger.info(`  Vars:          ${settings.nVars}`);
+        logger.info(`  Public vars:   ${settings.nPublic}`);
+        logger.info(`  Constraints:   ${plonkConstraints.length}`);
+        logger.info(`  Additions:     ${plonkAdditions.length}`);
+        logger.info("----------------------------");
+    }
+
+    // Compute k1 and k2 to be used in the permutation checks
+    if (logger) logger.info("> computing k1 and k2");
+    const [k1, k2] = computeK1K2();
+
+    // Compute omega 3 (w3) and omega 4 (w4) to be used in the prover and the verifier
+    // w3^3 = 1 and  w4^4 = 1
+    if (logger) logger.info("> computing w3");
+    const w3 = computeW3();
+    if (logger) logger.info("> computing w4");
+    const w4 = computeW4();
+    if (logger) logger.info("> computing w8");
+    const w8 = computeW8();
+    if (logger) logger.info("> computing wr");
+    const wr = getOmegaCubicRoot(settings.cirPower, curve.Fr);
+
+    // Write output zkey file
+    await writeZkeyFile();
+
+    await fdR1cs.close();
+    await fdPTau.close();
+
+    if (logger) logger.info("FFLONK SETUP FINISHED");
+
+    return 0;
+
+    async function computeFFConstraints(Fr, r1cs, logger) {
+        // Add public inputs and outputs
+        for (let i = 0; i < settings.nPublic; i++) {
+            plonkConstraints.push(getFFlonkConstantConstraint(i + 1, Fr));
+        }
+
+        // Add all constraints from r1cs file
+        const r1csProcessor = new r1csConstraintProcessor(Fr, getFFlonkConstantConstraint, getFFlonkAdditionConstraint, getFFlonkMultiplicationConstraint, logger);
+
+        const bR1cs = await binFileUtils__namespace.readSection(fdR1cs, sectionsR1cs, 2);
+        let bR1csPos = 0;
+        for (let i = 0; i < r1cs.nConstraints; i++) {
+            if ((logger) && (i !== 0) && (i % 500000 === 0)) {
+                logger.info(`    processing r1cs constraints ${i}/${r1cs.nConstraints}`);
+            }
+            const [constraints, additions] = r1csProcessor.processR1csConstraint(settings, ...readConstraint());
+
+            plonkConstraints.push(...constraints);
+            plonkAdditions.push(...additions);
+        }
+
+        function readConstraint() {
+            const c = [];
+            c[0] = readLC();
+            c[1] = readLC();
+            c[2] = readLC();
+            return c;
+        }
+
+        function readLC() {
+            const lc = {};
+
+            const buffUL32 = bR1cs.slice(bR1csPos, bR1csPos + 4);
+            bR1csPos += 4;
+            const buffUL32V = new DataView(buffUL32.buffer);
+            const nIdx = buffUL32V.getUint32(0, true);
+
+            const buff = bR1cs.slice(bR1csPos, bR1csPos + (4 + r1cs.n8) * nIdx);
+            bR1csPos += (4 + r1cs.n8) * nIdx;
+            const buffV = new DataView(buff.buffer);
+            for (let i = 0; i < nIdx; i++) {
+                const idx = buffV.getUint32(i * (4 + r1cs.n8), true);
+                const val = r1cs.F.fromRprLE(buff, i * (4 + r1cs.n8) + 4);
+                lc[idx] = val;
+            }
+            return lc;
+        }
+
+        return 0;
+    }
+
+    async function writeZkeyFile() {
+        if (logger) logger.info("> Writing the zkey file");
+        const fdZKey = await binFileUtils.createBinFile(zkeyFilename, "zkey", 1, ZKEY_FF_NSECTIONS, 1 << 22, 1 << 24);
+
+        if (logger) logger.info(`··· Writing Section ${HEADER_ZKEY_SECTION}. Zkey Header`);
+        await writeZkeyHeader(fdZKey);
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_ADDITIONS_SECTION}. Additions`);
+        await writeAdditions(fdZKey);
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_A_MAP_SECTION}. A Map`);
+        await writeWitnessMap(fdZKey, ZKEY_FF_A_MAP_SECTION, 0, "A map");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_B_MAP_SECTION}. B Map`);
+        await writeWitnessMap(fdZKey, ZKEY_FF_B_MAP_SECTION, 1, "B map");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_C_MAP_SECTION}. C Map`);
+        await writeWitnessMap(fdZKey, ZKEY_FF_C_MAP_SECTION, 2, "C map");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_QL_SECTION}. QL`);
+        await writeQMap(fdZKey, ZKEY_FF_QL_SECTION, 3, "QL");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_QR_SECTION}. QR`);
+        await writeQMap(fdZKey, ZKEY_FF_QR_SECTION, 4, "QR");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_QM_SECTION}. QM`);
+        await writeQMap(fdZKey, ZKEY_FF_QM_SECTION, 5, "QM");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_QO_SECTION}. QO`);
+        await writeQMap(fdZKey, ZKEY_FF_QO_SECTION, 6, "QO");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_QC_SECTION}. QC`);
+        await writeQMap(fdZKey, ZKEY_FF_QC_SECTION, 7, "QC");
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Sections ${ZKEY_FF_SIGMA1_SECTION},${ZKEY_FF_SIGMA2_SECTION},${ZKEY_FF_SIGMA3_SECTION}. Sigma1, Sigma2 & Sigma 3`);
+        await writeSigma(fdZKey);
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_LAGRANGE_SECTION}. Lagrange Polynomials`);
+        await writeLagrangePolynomials(fdZKey);
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_PTAU_SECTION}. Powers of Tau`);
+        await writePtau(fdZKey);
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_C0_SECTION}. C0`);
+        await writeC0(fdZKey);
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info(`··· Writing Section ${ZKEY_FF_HEADER_SECTION}. FFlonk Header`);
+        await writeFFlonkHeader(fdZKey);
+        if (globalThis.gc) globalThis.gc();
+
+        if (logger) logger.info("> Writing the zkey file finished");
+
+        await fdZKey.close();
+    }
+
+    async function writeZkeyHeader(fdZKey) {
+        await binFileUtils.startWriteSection(fdZKey, HEADER_ZKEY_SECTION);
+        await fdZKey.writeULE32(FFLONK_PROTOCOL_ID);
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writeAdditions(fdZKey) {
+        await binFileUtils.startWriteSection(fdZKey, ZKEY_FF_ADDITIONS_SECTION);
+
+        // Written values are 2 * 32 bit integers (2 * 4 bytes) + 2 field size values ( 2 * sFr bytes)
+        const buffOut = new Uint8Array(8 + 2 * sFr);
+        const buffOutV = new DataView(buffOut.buffer);
+
+        for (let i = 0; i < plonkAdditions.length; i++) {
+            if ((logger) && (i !== 0) && (i % 500000 === 0)) logger.info(`      writing Additions: ${i}/${plonkAdditions.length}`);
+
+            const addition = plonkAdditions[i];
+
+            buffOutV.setUint32(0, addition[0], true);
+            buffOutV.setUint32(4, addition[1], true);
+            buffOut.set(addition[2], 8);
+            buffOut.set(addition[3], 8 + sFr);
+
+            await fdZKey.write(buffOut);
+        }
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writeWitnessMap(fdZKey, sectionNum, posConstraint, name) {
+        await binFileUtils.startWriteSection(fdZKey, sectionNum);
+        for (let i = 0; i < plonkConstraints.length; i++) {
+            if (logger && (i !== 0) && (i % 500000 === 0)) {
+                logger.info(`      writing witness ${name}: ${i}/${plonkConstraints.length}`);
+            }
+
+            await fdZKey.writeULE32(plonkConstraints[i][posConstraint]);
+        }
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writeQMap(fdZKey, sectionNum, posConstraint, name) {
+        // Compute Q from q evaluations
+        let Q = new ffjavascript.BigBuffer(settings.domainSize * sFr);
+
+        for (let i = 0; i < plonkConstraints.length; i++) {
+            Q.set(plonkConstraints[i][posConstraint], i * sFr);
+            if ((logger) && (i !== 0) && (i % 500000 === 0)) {
+                logger.info(`      writing ${name}: ${i}/${plonkConstraints.length}`);
+            }
+        }
+
+        polynomials[name] = await Polynomial.fromEvaluations(Q, curve, logger);
+        evaluations[name] = await Evaluations.fromPolynomial(polynomials[name], 4, curve, logger);
+
+        // Write Q coefficients and evaluations
+        await binFileUtils.startWriteSection(fdZKey, sectionNum);
+        await fdZKey.write(polynomials[name].coef);
+        await fdZKey.write(evaluations[name].eval);
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writeSigma(fdZKey) {
+        // Compute sigma
+        const sigma = new ffjavascript.BigBuffer(sFr * settings.domainSize * 3);
+        const lastSeen = new BigArray(settings.nVars);
+        const firstPos = new BigArray(settings.nVars);
+
+        let w = Fr.one;
+        for (let i = 0; i < settings.domainSize; i++) {
+            if (i < plonkConstraints.length) {
+                buildSigma(plonkConstraints[i][0], i);
+                buildSigma(plonkConstraints[i][1], settings.domainSize + i);
+                buildSigma(plonkConstraints[i][2], settings.domainSize * 2 + i);
+            } else if (i < settings.domainSize - 2) {
+                buildSigma(0, i);
+                buildSigma(0, settings.domainSize + i);
+                buildSigma(0, settings.domainSize * 2 + i);
+            } else {
+                sigma.set(w, i * sFr);
+                sigma.set(Fr.mul(w, k1), (settings.domainSize + i) * sFr);
+                sigma.set(Fr.mul(w, k2), (settings.domainSize * 2 + i) * sFr);
+            }
+
+            w = Fr.mul(w, Fr.w[settings.cirPower]);
+
+            if ((logger) && (i !== 0) && (i % 500000 === 0)) {
+                logger.info(`      writing sigma phase1: ${i}/${plonkConstraints.length}`);
+            }
+        }
+
+        for (let i = 0; i < settings.nVars; i++) {
+            if (typeof firstPos[i] !== "undefined") {
+                sigma.set(lastSeen[i], firstPos[i] * sFr);
+            } else {
+                // throw new Error("Variable not used");
+                console.log("Variable not used");
+            }
+            if ((logger) && (i !== 0) && (i % 500000 === 0)) logger.info(`      writing sigma phase2: ${i}/${settings.nVars}`);
+        }
+
+        if (globalThis.gc) globalThis.gc();
+
+        // Write sigma coefficients and evaluations
+        for (let i = 0; i < 3; i++) {
+            const sectionId = 0 === i ? ZKEY_FF_SIGMA1_SECTION : 1 === i ? ZKEY_FF_SIGMA2_SECTION : ZKEY_FF_SIGMA3_SECTION;
+
+            let name = "S" + (i + 1);
+            polynomials[name] = await Polynomial.fromEvaluations(sigma.slice(settings.domainSize * sFr * i, settings.domainSize * sFr * (i + 1)), curve, logger);
+            evaluations[name] = await Evaluations.fromPolynomial(polynomials[name], 4, curve, logger);
+            await binFileUtils.startWriteSection(fdZKey, sectionId);
+            await fdZKey.write(polynomials[name].coef);
+            await fdZKey.write(evaluations[name].eval);
+            await binFileUtils.endWriteSection(fdZKey);
+
+            if (globalThis.gc) globalThis.gc();
+        }
+
+        return 0;
+
+        function buildSigma(signalId, idx) {
+            if (typeof lastSeen[signalId] === "undefined") {
+                firstPos[signalId] = idx;
+            } else {
+                sigma.set(lastSeen[signalId], idx * sFr);
+            }
+            let v;
+            if (idx < settings.domainSize) {
+                v = w;
+            } else if (idx < 2 * settings.domainSize) {
+                v = Fr.mul(w, k1);
+            } else {
+                v = Fr.mul(w, k2);
+            }
+
+            lastSeen[signalId] = v;
+        }
+    }
+
+    async function writeLagrangePolynomials(fdZKey) {
+        await binFileUtils.startWriteSection(fdZKey, ZKEY_FF_LAGRANGE_SECTION);
+
+        const l = Math.max(settings.nPublic, 1);
+        for (let i = 0; i < l; i++) {
+            let buff = new ffjavascript.BigBuffer(settings.domainSize * sFr);
+            buff.set(Fr.one, i * sFr);
+
+            await writeP4(fdZKey, buff);
+        }
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writePtau(fdZKey) {
+        await binFileUtils.startWriteSection(fdZKey, ZKEY_FF_PTAU_SECTION);
+
+        // domainSize * 9 + 18 = maximum SRS length needed, specifically to commit C2
+        PTau = new ffjavascript.BigBuffer((settings.domainSize * 9 + 18) * sG1);
+        await fdPTau.readToBuffer(PTau, 0, (settings.domainSize * 9 + 18) * sG1, pTauSections[2][0].p);
+
+        await fdZKey.write(PTau);
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writeC0(fdZKey) {
+        // C0(X) := QL(X^8) + X · QR(X^8) + X^2 · QO(X^8) + X^3 · QM(X^8) + X^4 · QC(X^8)
+        //            + X^5 · SIGMA1(X^8) + X^6 · SIGMA2(X^8) + X^7 · SIGMA3(X^8)
+        let C0 = new CPolynomial(8, curve, logger);
+        C0.addPolynomial(0, polynomials.QL);
+        C0.addPolynomial(1, polynomials.QR);
+        C0.addPolynomial(2, polynomials.QO);
+        C0.addPolynomial(3, polynomials.QM);
+        C0.addPolynomial(4, polynomials.QC);
+        C0.addPolynomial(5, polynomials.S1);
+        C0.addPolynomial(6, polynomials.S2);
+        C0.addPolynomial(7, polynomials.S3);
+
+        polynomials.C0 = C0.getPolynomial();
+
+        // Check degree
+        if (polynomials.C0.degree() >= 8 * settings.domainSize) {
+            throw new Error("C0 Polynomial is not well calculated");
+        }
+
+        await binFileUtils.startWriteSection(fdZKey, ZKEY_FF_C0_SECTION);
+        await fdZKey.write(polynomials.C0.coef);
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writeFFlonkHeader(fdZKey) {
+        await binFileUtils.startWriteSection(fdZKey, ZKEY_FF_HEADER_SECTION);
+
+        const primeQ = curve.q;
+        const n8q = (Math.floor((ffjavascript.Scalar.bitLength(primeQ) - 1) / 64) + 1) * 8;
+        await fdZKey.writeULE32(n8q);
+        await binFileUtils.writeBigInt(fdZKey, primeQ, n8q);
+
+        const primeR = curve.r;
+        const n8r = (Math.floor((ffjavascript.Scalar.bitLength(primeR) - 1) / 64) + 1) * 8;
+        await fdZKey.writeULE32(n8r);
+        await binFileUtils.writeBigInt(fdZKey, primeR, n8r);
+
+        // Total number of r1cs vars
+        await fdZKey.writeULE32(settings.nVars);
+        // Total number of r1cs public vars = outputs + public inputs
+        await fdZKey.writeULE32(settings.nPublic);
+        await fdZKey.writeULE32(settings.domainSize);
+        await fdZKey.writeULE32(plonkAdditions.length);
+        await fdZKey.writeULE32(plonkConstraints.length);
+
+        await fdZKey.write(k1);
+        await fdZKey.write(k2);
+
+        await fdZKey.write(w3);
+        await fdZKey.write(w4);
+        await fdZKey.write(w8);
+        await fdZKey.write(wr);
+
+        let bX_2;
+        bX_2 = await fdPTau.read(sG2, pTauSections[3][0].p + sG2);
+        await fdZKey.write(bX_2);
+
+        let commitC0 = await polynomials.C0.multiExponentiation(PTau, "C0");
+        await fdZKey.write(commitC0);
+
+        await binFileUtils.endWriteSection(fdZKey);
+    }
+
+    async function writeP4(fdZKey, buff) {
+        const [coefficients, evaluations4] = await Polynomial.to4T(buff, settings.domainSize, [], Fr);
+        await fdZKey.write(coefficients);
+        await fdZKey.write(evaluations4);
+
+        return [coefficients, evaluations4];
+    }
+
+    function computeK1K2() {
+        let k1 = Fr.two;
+        while (isIncluded(k1, [], settings.cirPower)) Fr.add(k1, Fr.one);
+        let k2 = Fr.add(k1, Fr.one);
+        while (isIncluded(k2, [k1], settings.cirPower)) Fr.add(k2, Fr.one);
+        return [k1, k2];
+
+        function isIncluded(k, kArr, pow) {
+            const domainSize = 2 ** pow;
+            let w = Fr.one;
+            for (let i = 0; i < domainSize; i++) {
+                if (Fr.eq(k, w)) return true;
+                for (let j = 0; j < kArr.length; j++) {
+                    if (Fr.eq(k, Fr.mul(kArr[j], w))) return true;
+                }
+                w = Fr.mul(w, Fr.w[pow]);
+            }
+            return false;
+        }
+    }
+
+    function computeW3() {
+        let generator = Fr.e(31624);
+
+        // Exponent is order(r - 1) / 3
+        let orderRsub1 = 3648040478639879203707734290876212514758060733402672390616367364429301415936n;
+        let exponent = ffjavascript.Scalar.div(orderRsub1, ffjavascript.Scalar.e(3));
+
+        return Fr.exp(generator, exponent);
+    }
+
+    function computeW4() {
+        return Fr.w[2];
+    }
+
+    function computeW8() {
+        return Fr.w[3];
+    }
+
+    function getOmegaCubicRoot(power, Fr) {
+        // Hardcorded 3th-root of Fr.w[28]
+        const firstRoot = Fr.e(467799165886069610036046866799264026481344299079011762026774533774345988080n);
+
+        return Fr.exp(firstRoot, 2 ** (28 - power));
+    }
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+const { stringifyBigInts } = ffjavascript.utils;
+
+
+async function fflonkProve(zkeyFileName, witnessFileName, logger) {
+    if (logger) logger.info("FFLONK PROVER STARTED");
+
+    // Read witness file
+    if (logger) logger.info("> Reading witness file");
+    const {
+        fd: fdWtns,
+        sections: wtnsSections
+    } = await binFileUtils__namespace.readBinFile(witnessFileName, "wtns", 2, 1 << 25, 1 << 23);
+    const wtns = await readHeader(fdWtns, wtnsSections);
+
+    //Read zkey file
+    if (logger) logger.info("> Reading zkey file");
+    const {
+        fd: fdZKey,
+        sections: zkeySections
+    } = await binFileUtils__namespace.readBinFile(zkeyFileName, "zkey", 2, 1 << 25, 1 << 23);
+    const zkey = await readHeader$1(fdZKey, zkeySections);
+
+    if (zkey.protocolId !== FFLONK_PROTOCOL_ID) {
+        throw new Error("zkey file is not fflonk");
+    }
+
+    if (!ffjavascript.Scalar.eq(zkey.r, wtns.q)) {
+        throw new Error("Curve of the witness does not match the curve of the proving key");
+    }
+
+    if (wtns.nWitness !== zkey.nVars - zkey.nAdditions) {
+        throw new Error(`Invalid witness length. Circuit: ${zkey.nVars}, witness: ${wtns.nWitness}, ${zkey.nAdditions}`);
+    }
+
+    const curve = zkey.curve;
+
+    const Fr = curve.Fr;
+
+    const sFr = curve.Fr.n8;
+    const sG1 = curve.G1.F.n8 * 2;
+    const sDomain = zkey.domainSize * sFr;
+
+    if (logger) {
+        logger.info("----------------------------");
+        logger.info("  FFLONK PROVE SETTINGS");
+        logger.info(`  Curve:         ${curve.name}`);
+        logger.info(`  Circuit power: ${zkey.power}`);
+        logger.info(`  Domain size:   ${zkey.domainSize}`);
+        logger.info(`  Vars:          ${zkey.nVars}`);
+        logger.info(`  Public vars:   ${zkey.nPublic}`);
+        logger.info(`  Constraints:   ${zkey.nConstraints}`);
+        logger.info(`  Additions:     ${zkey.nAdditions}`);
+        logger.info("----------------------------");
+    }
+
+    //Read witness data
+    if (logger) logger.info("> Reading witness file data");
+    const buffWitness = await binFileUtils__namespace.readSection(fdWtns, wtnsSections, 2);
+    await fdWtns.close();
+
+    // First element in plonk is not used and can be any value. (But always the same).
+    // We set it to zero to go faster in the exponentiations.
+    buffWitness.set(Fr.zero, 0);
+    const buffInternalWitness = new ffjavascript.BigBuffer(zkey.nAdditions * sFr);
+
+    let buffers = {};
+    let polynomials = {};
+    let evaluations = {};
+
+    // To divide prime fields the Extended Euclidean Algorithm for computing modular inverses is needed.
+    // NOTE: This is the equivalent of compute 1/denominator and then multiply it by the numerator.
+    // The Extended Euclidean Algorithm is expensive in terms of computation.
+    // For the special case where we need to do many modular inverses, there's a simple mathematical trick
+    // that allows us to compute many inverses, called Montgomery batch inversion.
+    // More info: https://vitalik.ca/general/2018/07/21/starks_part_3.html
+    // Montgomery batch inversion reduces the n inverse computations to a single one
+    // To save this (single) inverse computation on-chain, will compute it in proving time and send it to the verifier.
+    // The verifier will have to check:
+    // 1) the denominator is correct multiplying by himself non-inverted -> a * 1/a == 1
+    // 2) compute the rest of the denominators using the Montgomery batch inversion
+    // The inversions are:
+    //   · denominator needed in step 8 and 9 of the verifier to multiply by 1/Z_H(xi)
+    //   · denominator needed in step 10 and 11 of the verifier
+    //   · denominator needed in the verifier when computing L_i^{S1}(X) and L_i^{S2}(X)
+    //   · L_i i=1 to num public inputs, needed in step 6 and 7 of the verifier to compute L_1(xi) and PI(xi)
+    let toInverse = {};
+
+    let challenges = {};
+    let roots = {};
+
+    let proof = new Proof(curve, logger);
+
+    if (logger) logger.info(`> Reading Section ${ZKEY_FF_ADDITIONS_SECTION}. Additions`);
+    await calculateAdditions();
+
+    if (logger) logger.info(`> Reading Sections ${ZKEY_FF_SIGMA1_SECTION},${ZKEY_FF_SIGMA2_SECTION},${ZKEY_FF_SIGMA3_SECTION}. Sigma1, Sigma2 & Sigma 3`);
+    if (logger) logger.info("··· Reading Sigma polynomials ");
+    polynomials.Sigma1 = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+    polynomials.Sigma2 = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+    polynomials.Sigma3 = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+
+    await fdZKey.readToBuffer(polynomials.Sigma1.coef, 0, sDomain, zkeySections[ZKEY_FF_SIGMA1_SECTION][0].p);
+    await fdZKey.readToBuffer(polynomials.Sigma2.coef, 0, sDomain, zkeySections[ZKEY_FF_SIGMA2_SECTION][0].p);
+    await fdZKey.readToBuffer(polynomials.Sigma3.coef, 0, sDomain, zkeySections[ZKEY_FF_SIGMA3_SECTION][0].p);
+
+    if (logger) logger.info("··· Reading Sigma evaluations");
+    evaluations.Sigma1 = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+    evaluations.Sigma2 = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+    evaluations.Sigma3 = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+
+    await fdZKey.readToBuffer(evaluations.Sigma1.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_SIGMA1_SECTION][0].p + sDomain);
+    await fdZKey.readToBuffer(evaluations.Sigma2.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_SIGMA2_SECTION][0].p + sDomain);
+    await fdZKey.readToBuffer(evaluations.Sigma3.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_SIGMA3_SECTION][0].p + sDomain);
+
+    if (logger) logger.info(`> Reading Section ${ZKEY_FF_PTAU_SECTION}. Powers of Tau`);
+    const PTau = new ffjavascript.BigBuffer(zkey.domainSize * 16 * sG1);
+    // domainSize * 9 + 18 = SRS length in the zkey saved in setup process.
+    // it corresponds to the maximum SRS length needed, specifically to commit C2
+    // notice that the reserved buffers size is zkey.domainSize * 16 * sG1 because a power of two buffer size is needed
+    // the remaining buffer not filled from SRS are set to 0
+    await fdZKey.readToBuffer(PTau, 0, (zkey.domainSize * 9 + 18) * sG1, zkeySections[ZKEY_FF_PTAU_SECTION][0].p);
+
+    // START FFLONK PROVER PROTOCOL
+    if (globalThis.gc) globalThis.gc();
+
+    // ROUND 1. Compute C1(X) polynomial
+    if (logger) logger.info("");
+    if (logger) logger.info("> ROUND 1");
+    await round1();
+
+    delete polynomials.T0;
+    delete evaluations.QL;
+    delete evaluations.QR;
+    delete evaluations.QM;
+    delete evaluations.QO;
+    delete evaluations.QC;
+    if (globalThis.gc) globalThis.gc();
+
+    // ROUND 2. Compute C2(X) polynomial
+    if (logger) logger.info("> ROUND 2");
+    await round2();
+
+    delete buffers.A;
+    delete buffers.B;
+    delete buffers.C;
+    delete evaluations.A;
+    delete evaluations.B;
+    delete evaluations.C;
+    delete evaluations.Sigma1;
+    delete evaluations.Sigma2;
+    delete evaluations.Sigma3;
+    delete evaluations.lagrange1;
+    delete evaluations.Z;
+    if (globalThis.gc) globalThis.gc();
+
+    // ROUND 3. Compute opening evaluations
+    if (logger) logger.info("> ROUND 3");
+    await round3();
+
+    delete polynomials.A;
+    delete polynomials.B;
+    delete polynomials.C;
+    delete polynomials.Z;
+    delete polynomials.T1;
+    delete polynomials.T2;
+    delete polynomials.Sigma1;
+    delete polynomials.Sigma2;
+    delete polynomials.Sigma3;
+    delete polynomials.QL;
+    delete polynomials.QR;
+    delete polynomials.QM;
+    delete polynomials.QC;
+    delete polynomials.QO;
+    if (globalThis.gc) globalThis.gc();
+
+    // ROUND 4. Compute W(X) polynomial
+    if (logger) logger.info("> ROUND 4");
+    await round4();
+    if (globalThis.gc) globalThis.gc();
+
+    // ROUND 5. Compute W'(X) polynomial
+    if (logger) logger.info("> ROUND 5");
+    await round5();
+
+    delete polynomials.C0;
+    delete polynomials.C1;
+    delete polynomials.C2;
+    delete polynomials.R1;
+    delete polynomials.R2;
+    delete polynomials.F;
+    delete polynomials.L;
+    delete polynomials.ZT;
+    delete polynomials.ZTS2;
+    await fdZKey.close();
+    if (globalThis.gc) globalThis.gc();
+
+    proof.addEvaluation("inv", getMontgomeryBatchedInverse());
+
+    // Prepare proof
+    let _proof = proof.toObjectProof();
+    _proof.protocol = "fflonk";
+    _proof.curve = curve.name;
+
+    // Prepare public inputs
+    let publicSignals = [];
+
+    for (let i = 1; i <= zkey.nPublic; i++) {
+        const i_sFr = i * sFr;
+
+        const pub = buffWitness.slice(i_sFr, i_sFr + sFr);
+        publicSignals.push(ffjavascript.Scalar.fromRprLE(pub));
+    }
+
+    if (logger) logger.info("FFLONK PROVER FINISHED");
+
+    return {
+        proof: stringifyBigInts(_proof),
+        publicSignals: stringifyBigInts(publicSignals)
+    };
+
+    async function calculateAdditions() {
+        if (logger) logger.info("··· Computing additions");
+        const additionsBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_FF_ADDITIONS_SECTION);
+
+        // sizes: wireId_x = 4 bytes (32 bits), factor_x = field size bits
+        // Addition form: wireId_a wireId_b factor_a factor_b (size is 4 + 4 + sFr + sFr)
+        const sSum = 8 + sFr * 2;
+
+        for (let i = 0; i < zkey.nAdditions; i++) {
+            if (logger && (0 !== i) && (i % 100000 === 0)) logger.info(`    addition ${i}/${zkey.nAdditions}`);
+
+            // Read addition values
+            let offset = i * sSum;
+            const signalId1 = readUInt32(additionsBuff, offset);
+            offset += 4;
+            const signalId2 = readUInt32(additionsBuff, offset);
+            offset += 4;
+            const factor1 = additionsBuff.slice(offset, offset + sFr);
+            offset += sFr;
+            const factor2 = additionsBuff.slice(offset, offset + sFr);
+
+            // Get witness value
+            const witness1 = getWitness(signalId1);
+            const witness2 = getWitness(signalId2);
+
+            //Calculate final result
+            const result = Fr.add(Fr.mul(factor1, witness1), Fr.mul(factor2, witness2));
+
+            buffInternalWitness.set(result, sFr * i);
+        }
+    }
+
+    function readUInt32(b, o) {
+        const buff = b.slice(o, o + 4);
+        const buffV = new DataView(buff.buffer, buff.byteOffset, buff.byteLength);
+        return buffV.getUint32(0, true);
+    }
+
+    function getWitness(idx) {
+        let diff = zkey.nVars - zkey.nAdditions;
+        if (idx < diff) {
+            return buffWitness.slice(idx * sFr, idx * sFr + sFr);
+        } else if (idx < zkey.nVars) {
+            const offset = (idx - diff) * sFr;
+            return buffInternalWitness.slice(offset, offset + sFr);
+        }
+
+        return Fr.zero;
+    }
+
+    async function round1() {
+        // STEP 1.1 - Generate random blinding scalars (b_1, ..., b9) ∈ F
+        challenges.b = [];
+        for (let i = 1; i <= 9; i++) {
+            challenges.b[i] = Fr.random();
+        }
+
+        // STEP 1.2 - Compute wire polynomials a(X), b(X) and c(X)
+        if (logger) logger.info("> Computing A, B, C wire polynomials");
+        await computeWirePolynomials();
+
+        // STEP 1.3 - Compute the quotient polynomial T0(X)
+        if (logger) logger.info("> Computing T0 polynomial");
+        await computeT0();
+
+        // STEP 1.4 - Compute the FFT-style combination polynomial C1(X)
+        if (logger) logger.info("> Computing C1 polynomial");
+        await computeC1();
+
+        // The first output of the prover is ([C1]_1)
+        if (logger) logger.info("> Computing C1 multi exponentiation");
+        let commitC1 = await polynomials.C1.multiExponentiation(PTau, "C1");
+        proof.addPolynomial("C1", commitC1);
+
+        return 0;
+
+        async function computeWirePolynomials() {
+            if (logger) logger.info("··· Reading data from zkey file");
+            // Build A, B and C evaluations buffer from zkey and witness files
+            buffers.A = new ffjavascript.BigBuffer(sDomain);
+            buffers.B = new ffjavascript.BigBuffer(sDomain);
+            buffers.C = new ffjavascript.BigBuffer(sDomain);
+
+            // Read zkey sections and fill the buffers
+            const aMapBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_FF_A_MAP_SECTION);
+            const bMapBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_FF_B_MAP_SECTION);
+            const cMapBuff = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_FF_C_MAP_SECTION);
+
+            // Compute all witness from signal ids and set them to A,B & C buffers
+            for (let i = 0; i < zkey.nConstraints; i++) {
+                const i_sFr = i * sFr;
+                const offset = i * 4;
+
+                // Compute A value from a signal id
+                const signalIdA = readUInt32(aMapBuff, offset);
+                buffers.A.set(getWitness(signalIdA), i_sFr);
+
+                // Compute B value from a signal id
+                const signalIdB = readUInt32(bMapBuff, offset);
+                buffers.B.set(getWitness(signalIdB), i_sFr);
+
+                // Compute C value from a signal id
+                const signalIdC = readUInt32(cMapBuff, offset);
+                buffers.C.set(getWitness(signalIdC), i_sFr);
+            }
+
+            // Blind a(X), b(X) and c(X) polynomials coefficients with blinding scalars b
+            buffers.A.set(challenges.b[1], sDomain - 64);
+            buffers.A.set(challenges.b[2], sDomain - 32);
+            buffers.B.set(challenges.b[3], sDomain - 64);
+            buffers.B.set(challenges.b[4], sDomain - 32);
+            buffers.C.set(challenges.b[5], sDomain - 64);
+            buffers.C.set(challenges.b[6], sDomain - 32);
+
+            buffers.A = await Fr.batchToMontgomery(buffers.A);
+            buffers.B = await Fr.batchToMontgomery(buffers.B);
+            buffers.C = await Fr.batchToMontgomery(buffers.C);
+
+            // Compute the coefficients of the wire polynomials a(X), b(X) and c(X) from A,B & C buffers
+            if (logger) logger.info("··· Computing A ifft");
+            polynomials.A = await Polynomial.fromEvaluations(buffers.A, curve, logger);
+            if (logger) logger.info("··· Computing B ifft");
+            polynomials.B = await Polynomial.fromEvaluations(buffers.B, curve, logger);
+            if (logger) logger.info("··· Computing C ifft");
+            polynomials.C = await Polynomial.fromEvaluations(buffers.C, curve, logger);
+
+            // Compute extended evaluations of a(X), b(X) and c(X) polynomials
+            if (logger) logger.info("··· Computing A fft");
+            evaluations.A = await Evaluations.fromPolynomial(polynomials.A, 4, curve, logger);
+            if (logger) logger.info("··· Computing B fft");
+            evaluations.B = await Evaluations.fromPolynomial(polynomials.B, 4, curve, logger);
+            if (logger) logger.info("··· Computing C fft");
+            evaluations.C = await Evaluations.fromPolynomial(polynomials.C, 4, curve, logger);
+
+            // Check degrees
+            if (polynomials.A.degree() >= zkey.domainSize) {
+                throw new Error("A Polynomial is not well calculated");
+            }
+            if (polynomials.B.degree() >= zkey.domainSize) {
+                throw new Error("B Polynomial is not well calculated");
+            }
+            if (polynomials.C.degree() >= zkey.domainSize) {
+                throw new Error("C Polynomial is not well calculated");
+            }
+        }
+
+        async function computeT0() {
+            if (logger) logger.info(`··· Reading sections ${ZKEY_FF_QL_SECTION}, ${ZKEY_FF_QR_SECTION}` +
+                `, ${ZKEY_FF_QM_SECTION}, ${ZKEY_FF_QO_SECTION}, ${ZKEY_FF_QC_SECTION}. Q selectors`);
+            // Reserve memory for Q's evaluations
+            evaluations.QL = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+            evaluations.QR = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+            evaluations.QM = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+            evaluations.QO = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+            evaluations.QC = new Evaluations(new ffjavascript.BigBuffer(sDomain * 4), curve, logger);
+
+            // Read Q's evaluations from zkey file
+            await fdZKey.readToBuffer(evaluations.QL.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_QL_SECTION][0].p + sDomain);
+            await fdZKey.readToBuffer(evaluations.QR.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_QR_SECTION][0].p + sDomain);
+            await fdZKey.readToBuffer(evaluations.QM.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_QM_SECTION][0].p + sDomain);
+            await fdZKey.readToBuffer(evaluations.QO.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_QO_SECTION][0].p + sDomain);
+            await fdZKey.readToBuffer(evaluations.QC.eval, 0, sDomain * 4, zkeySections[ZKEY_FF_QC_SECTION][0].p + sDomain);
+
+            // Read Lagrange polynomials & evaluations from zkey file
+            const lagrangePolynomials = await binFileUtils__namespace.readSection(fdZKey, zkeySections, ZKEY_FF_LAGRANGE_SECTION);
+            evaluations.lagrange1 = new Evaluations(lagrangePolynomials, curve, logger);
+
+            // Reserve memory for buffers T0
+            buffers.T0 = new ffjavascript.BigBuffer(sDomain * 4);
+
+            if (logger) logger.info("··· Computing T0 evaluations");
+            for (let i = 0; i < zkey.domainSize * 4; i++) {
+                if (logger && (0 !== i) && (i % 100000 === 0)) logger.info(`      T0 evaluation ${i}/${zkey.domainSize * 4}`);
+
+                // Get related evaluations to compute current T0 evaluation
+                const a = evaluations.A.getEvaluation(i);
+                const b = evaluations.B.getEvaluation(i);
+                const c = evaluations.C.getEvaluation(i);
+
+                const ql = evaluations.QL.getEvaluation(i);
+                const qr = evaluations.QR.getEvaluation(i);
+                const qm = evaluations.QM.getEvaluation(i);
+                const qo = evaluations.QO.getEvaluation(i);
+                const qc = evaluations.QC.getEvaluation(i);
+
+                // Compute current public input
+                let pi = Fr.zero;
+                for (let j = 0; j < zkey.nPublic; j++) {
+                    const offset = (j * 5 * zkey.domainSize) + zkey.domainSize + i;
+
+                    const lPol = evaluations.lagrange1.getEvaluation(offset);
+                    const aVal = buffers.A.slice(j * sFr, (j + 1) * sFr);
+
+                    pi = Fr.sub(pi, Fr.mul(lPol, aVal));
+                }
+
+                //T0(X) = [q_L(X)·a(X) + q_R(X)·b(X) + q_M(X)·a(X)·b(X) + q_O(X)·c(X) + q_C(X) + PI(X)] · 1/Z_H(X)
+                // Compute first T0(X)·Z_H(X), so divide later the resulting polynomial by Z_H(X)
+                // expression 1 -> q_L(X)·a(X)
+                const e1 = Fr.mul(a, ql);
+
+                // expression 2 -> q_R(X)·b(X)
+                const e2 = Fr.mul(b, qr);
+
+                // expression 3 -> q_M(X)·a(X)·b(X)
+                const e3 = Fr.mul(Fr.mul(a, b), qm);
+
+                // expression 4 -> q_O(X)·c(X)
+                const e4 = Fr.mul(c, qo);
+
+                // t0 = expressions 1 + expression 2 + expression 3 + expression 4 + qc + pi
+                const t0 = Fr.add(e1, Fr.add(e2, Fr.add(e3, Fr.add(e4, Fr.add(qc, pi)))));
+
+                buffers.T0.set(t0, i * sFr);
+            }
+
+            if (logger) logger.info("buffer T0: " + buffers.T0.byteLength / sFr);
+
+            // Compute the coefficients of the polynomial T0(X) from buffers.T0
+            if (logger) logger.info("··· Computing T0 ifft");
+            polynomials.T0 = await Polynomial.fromEvaluations(buffers.T0, curve, logger);
+
+            if (logger) logger.info("T0 length: " + polynomials.T0.length());
+            if (logger) logger.info("T0 degree: " + polynomials.T0.degree());
+
+            // Divide the polynomial T0 by Z_H(X)
+            if (logger) logger.info("··· Computing T0 / ZH");
+            polynomials.T0.divByZerofier(zkey.domainSize, Fr.one);
+
+            // Check degree
+            if (polynomials.T0.degree() >= 2 * zkey.domainSize - 2) {
+                throw new Error(`T0 Polynomial is not well calculated (degree is ${polynomials.T0.degree()} and must be less than ${2 * zkey.domainSize + 2}`);
+            }
+
+            delete buffers.T0;
+        }
+
+        async function computeC1() {
+            let C1 = new CPolynomial(4, curve, logger);
+            C1.addPolynomial(0, polynomials.A);
+            C1.addPolynomial(1, polynomials.B);
+            C1.addPolynomial(2, polynomials.C);
+            C1.addPolynomial(3, polynomials.T0);
+
+            polynomials.C1 = C1.getPolynomial();
+
+            // Check degree
+            if (polynomials.C1.degree() >= 8 * zkey.domainSize - 8) {
+                throw new Error("C1 Polynomial is not well calculated");
+            }
+        }
+    }
+
+    async function round2() {
+        // STEP 2.1 - Compute permutation challenge beta and gamma ∈ F
+        // Compute permutation challenge beta
+        if (logger) logger.info("> Computing challenges beta and gamma");
+        const transcript = new Keccak256Transcript(curve);
+
+        // Add C0 to the transcript
+        transcript.addPolCommitment(zkey.C0);
+
+        // Add A to the transcript
+        for (let i = 0; i < zkey.nPublic; i++) {
+            transcript.addScalar(buffers.A.slice(i * sFr, i * sFr + sFr));
+        }
+
+        // Add C1 to the transcript
+        transcript.addPolCommitment(proof.getPolynomial("C1"));
+
+        challenges.beta = transcript.getChallenge();
+        if (logger) logger.info("··· challenges.beta: " + Fr.toString(challenges.beta));
+
+        // Compute permutation challenge gamma
+        transcript.reset();
+        transcript.addScalar(challenges.beta);
+        challenges.gamma = transcript.getChallenge();
+        if (logger) logger.info("··· challenges.gamma: " + Fr.toString(challenges.gamma));
+
+        // STEP 2.2 - Compute permutation polynomial z(X)
+        if (logger) logger.info("> Computing Z polynomial");
+        await computeZ();
+
+        // STEP 2.3 - Compute quotient polynomial T1(X) and T2(X)
+        if (logger) logger.info("> Computing T1 polynomial");
+        await computeT1();
+        if (logger) logger.info("> Computing T2 polynomial");
+        await computeT2();
+
+        // STEP 2.4 - Compute the FFT-style combination polynomial C2(X)
+        if (logger) logger.info("> Computing C2 polynomial");
+        await computeC2();
+
+        // The second output of the prover is ([C2]_1)
+        if (logger) logger.info("> Computing C2 multi exponentiation");
+        let commitC2 = await polynomials.C2.multiExponentiation(PTau, "C2");
+        proof.addPolynomial("C2", commitC2);
+
+        return 0;
+
+        async function computeZ() {
+            if (logger) logger.info("··· Computing Z evaluations");
+
+            let numArr = new ffjavascript.BigBuffer(sDomain);
+            let denArr = new ffjavascript.BigBuffer(sDomain);
+
+            // Set the first values to 1
+            numArr.set(Fr.one, 0);
+            denArr.set(Fr.one, 0);
+
+            // Set initial omega
+            let w = Fr.one;
+            for (let i = 0; i < zkey.domainSize; i++) {
+                if (logger && (0 !== i) && (i % 100000 === 0)) logger.info(`    Z evaluation ${i}/${zkey.domainSize}`);
+                const i_sFr = i * sFr;
+
+                // Z(X) := numArr / denArr
+                // numArr := (a + beta·ω + gamma)(b + beta·ω·k1 + gamma)(c + beta·ω·k2 + gamma)
+                const betaw = Fr.mul(challenges.beta, w);
+
+                let num1 = buffers.A.slice(i_sFr, i_sFr + sFr);
+                num1 = Fr.add(num1, betaw);
+                num1 = Fr.add(num1, challenges.gamma);
+
+                let num2 = buffers.B.slice(i_sFr, i_sFr + sFr);
+                num2 = Fr.add(num2, Fr.mul(zkey.k1, betaw));
+                num2 = Fr.add(num2, challenges.gamma);
+
+                let num3 = buffers.C.slice(i_sFr, i_sFr + sFr);
+                num3 = Fr.add(num3, Fr.mul(zkey.k2, betaw));
+                num3 = Fr.add(num3, challenges.gamma);
+
+                let num = Fr.mul(num1, Fr.mul(num2, num3));
+
+                // denArr := (a + beta·sigma1 + gamma)(b + beta·sigma2 + gamma)(c + beta·sigma3 + gamma)
+                let den1 = buffers.A.slice(i_sFr, i_sFr + sFr);
+                den1 = Fr.add(den1, Fr.mul(challenges.beta, evaluations.Sigma1.getEvaluation(i * 4)));
+                den1 = Fr.add(den1, challenges.gamma);
+
+                let den2 = buffers.B.slice(i_sFr, i_sFr + sFr);
+                den2 = Fr.add(den2, Fr.mul(challenges.beta, evaluations.Sigma2.getEvaluation(i * 4)));
+                den2 = Fr.add(den2, challenges.gamma);
+
+                let den3 = buffers.C.slice(i_sFr, i_sFr + sFr);
+                den3 = Fr.add(den3, Fr.mul(challenges.beta, evaluations.Sigma3.getEvaluation(i * 4)));
+                den3 = Fr.add(den3, challenges.gamma);
+
+                let den = Fr.mul(den1, Fr.mul(den2, den3));
+
+                // Multiply current num value with the previous one saved in numArr
+                num = Fr.mul(numArr.slice(i_sFr, i_sFr + sFr), num);
+                numArr.set(num, ((i + 1) % zkey.domainSize) * sFr);
+
+                // Multiply current den value with the previous one saved in denArr
+                den = Fr.mul(denArr.slice(i_sFr, i_sFr + sFr), den);
+                denArr.set(den, ((i + 1) % zkey.domainSize) * sFr);
+
+                // Next omega
+                w = Fr.mul(w, Fr.w[zkey.power]);
+            }
+            // Compute the inverse of denArr to compute in the next command the
+            // division numArr/denArr by multiplying num · 1/denArr
+            denArr = await Fr.batchInverse(denArr);
+
+            // TODO: Do it in assembly and in parallel
+            // Multiply numArr · denArr where denArr was inverted in the previous command
+            for (let i = 0; i < zkey.domainSize; i++) {
+                const i_sFr = i * sFr;
+
+                const z = Fr.mul(numArr.slice(i_sFr, i_sFr + sFr), denArr.slice(i_sFr, i_sFr + sFr));
+                numArr.set(z, i_sFr);
+            }
+            // From now on the values saved on numArr will be Z(X) buffer
+            buffers.Z = numArr;
+
+            if (!Fr.eq(numArr.slice(0, sFr), Fr.one)) {
+                throw new Error("Copy constraints does not match");
+            }
+
+            // Compute polynomial coefficients z(X) from buffers.Z
+            if (logger) logger.info("··· Computing Z ifft");
+            polynomials.Z = await Polynomial.fromEvaluations(buffers.Z, curve, logger);
+
+            // Compute extended evaluations of z(X) polynomial
+            if (logger) logger.info("··· Computing Z fft");
+            evaluations.Z = await Evaluations.fromPolynomial(polynomials.Z, 4, curve, logger);
+
+            // Blind z(X) polynomial coefficients with blinding scalars b
+            polynomials.Z.blindCoefficients([challenges.b[9], challenges.b[8], challenges.b[7]]);
+
+            // Check degree
+            if (polynomials.Z.degree() >= zkey.domainSize + 3) {
+                throw new Error("Z Polynomial is not well calculated");
+            }
+
+            delete buffers.Z;
+        }
+
+        async function computeT1() {
+            if (logger) logger.info("··· Computing T1 evaluations");
+
+            buffers.T1 = new ffjavascript.BigBuffer(sDomain * 2);
+            buffers.T1z = new ffjavascript.BigBuffer(sDomain * 2);
+
+            // Set initial omega
+            let omega = Fr.one;
+            for (let i = 0; i < zkey.domainSize * 2; i++) {
+                if (logger && (0 !== i) && (i % 100000 === 0)) logger.info(`    T1 evaluation ${i}/${zkey.domainSize * 4}`);
+
+                const omega2 = Fr.square(omega);
+
+                const z = evaluations.Z.getEvaluation(i * 2);
+                const zp = Fr.add(Fr.add(Fr.mul(challenges.b[7], omega2), Fr.mul(challenges.b[8], omega)), challenges.b[9]);
+
+                // T1(X) := (z(X) - 1) · L_1(X)
+                // Compute first T1(X)·Z_H(X), so divide later the resulting polynomial by Z_H(X)
+                const lagrange1 = evaluations.lagrange1.getEvaluation(zkey.domainSize + i * 2);
+                let t1 = Fr.mul(Fr.sub(z, Fr.one), lagrange1);
+                let t1z = Fr.mul(zp, lagrange1);
+
+                buffers.T1.set(t1, i * sFr);
+                buffers.T1z.set(t1z, i * sFr);
+
+                // Compute next omega
+                omega = Fr.mul(omega, Fr.w[zkey.power + 1]);
+            }
+
+            // Compute the coefficients of the polynomial T1(X) from buffers.T1
+            if (logger) logger.info("··· Computing T1 ifft");
+            polynomials.T1 = await Polynomial.fromEvaluations(buffers.T1, curve, logger);
+
+            // Divide the polynomial T1 by Z_H(X)
+            polynomials.T1.divByZerofier(zkey.domainSize, Fr.one);
+
+            // Compute the coefficients of the polynomial T1z(X) from buffers.T1z
+            if (logger) logger.info("··· Computing T1z ifft");
+            polynomials.T1z = await Polynomial.fromEvaluations(buffers.T1z, curve, logger);
+
+            // Add the polynomial T1z to T1 to get the final polynomial T1
+            polynomials.T1.add(polynomials.T1z);
+
+            // Check degree
+            if (polynomials.T1.degree() >= zkey.domainSize + 2) {
+                throw new Error("T1 Polynomial is not well calculated");
+            }
+
+            delete buffers.T1;
+            delete buffers.T1z;
+            delete polynomials.T1z;
+        }
+
+        async function computeT2() {
+            if (logger) logger.info("··· Computing T2 evaluations");
+
+            buffers.T2 = new ffjavascript.BigBuffer(sDomain * 4);
+            buffers.T2z = new ffjavascript.BigBuffer(sDomain * 4);
+
+            // Set initial omega
+            let omega = Fr.one;
+            for (let i = 0; i < zkey.domainSize * 4; i++) {
+                if (logger && (0 !== i) && (i % 100000 === 0)) logger.info(`    T2 evaluation ${i}/${zkey.domainSize * 4}`);
+
+                const omega2 = Fr.square(omega);
+                const omegaW = Fr.mul(omega, Fr.w[zkey.power]);
+                const omegaW2 = Fr.square(omegaW);
+
+                const a = evaluations.A.getEvaluation(i);
+                const b = evaluations.B.getEvaluation(i);
+                const c = evaluations.C.getEvaluation(i);
+                const z = evaluations.Z.getEvaluation(i);
+                const zW = evaluations.Z.getEvaluation((zkey.domainSize * 4 + 4 + i) % (zkey.domainSize * 4));
+
+                const zp = Fr.add(Fr.add(Fr.mul(challenges.b[7], omega2), Fr.mul(challenges.b[8], omega)), challenges.b[9]);
+                const zWp = Fr.add(Fr.add(Fr.mul(challenges.b[7], omegaW2), Fr.mul(challenges.b[8], omegaW)), challenges.b[9]);
+
+                const sigma1 = evaluations.Sigma1.getEvaluation(i);
+                const sigma2 = evaluations.Sigma2.getEvaluation(i);
+                const sigma3 = evaluations.Sigma3.getEvaluation(i);
+
+                // T2(X) := [ (a(X) + beta·X + gamma)(b(X) + beta·k1·X + gamma)(c(X) + beta·k2·X + gamma)z(X)
+                //           -(a(X) + beta·sigma1(X) + gamma)(b(X) + beta·sigma2(X) + gamma)(c(X) + beta·sigma3(X) + gamma)z(Xω)] · 1/Z_H(X)
+                // Compute first T2(X)·Z_H(X), so divide later the resulting polynomial by Z_H(X)
+
+                // expression 1 -> (a(X) + beta·X + gamma)(b(X) + beta·k1·X + gamma)(c(X) + beta·k2·X + gamma)z(X)
+                const betaX = Fr.mul(challenges.beta, omega);
+
+                let e11 = Fr.add(a, betaX);
+                e11 = Fr.add(e11, challenges.gamma);
+
+                let e12 = Fr.add(b, Fr.mul(betaX, zkey.k1));
+                e12 = Fr.add(e12, challenges.gamma);
+
+                let e13 = Fr.add(c, Fr.mul(betaX, zkey.k2));
+                e13 = Fr.add(e13, challenges.gamma);
+
+                let e1 = Fr.mul(Fr.mul(Fr.mul(e11, e12), e13), z);
+                let e1z = Fr.mul(Fr.mul(Fr.mul(e11, e12), e13), zp);
+                // const [e1, e1z] = MulZ.mul4(e11, e12, e13, z, ap, bp, cp, zp, i % 4, Fr);
+
+                // expression 2 -> (a(X) + beta·sigma1(X) + gamma)(b(X) + beta·sigma2(X) + gamma)(c(X) + beta·sigma3(X) + gamma)z(Xω)
+                let e21 = Fr.add(a, Fr.mul(challenges.beta, sigma1));
+                e21 = Fr.add(e21, challenges.gamma);
+
+                let e22 = Fr.add(b, Fr.mul(challenges.beta, sigma2));
+                e22 = Fr.add(e22, challenges.gamma);
+
+                let e23 = Fr.add(c, Fr.mul(challenges.beta, sigma3));
+                e23 = Fr.add(e23, challenges.gamma);
+
+                let e2 = Fr.mul(Fr.mul(Fr.mul(e21, e22), e23), zW);
+                let e2z = Fr.mul(Fr.mul(Fr.mul(e21, e22), e23), zWp);
+                // const [e2, e2z] = MulZ.mul4(e21, e22, e23, zW, ap, bp, cp, zWp, i % 4, Fr);
+
+                let t2 = Fr.sub(e1, e2);
+                let t2z = Fr.sub(e1z, e2z);
+
+                buffers.T2.set(t2, i * sFr);
+                buffers.T2z.set(t2z, i * sFr);
+
+                // Compute next omega
+                omega = Fr.mul(omega, Fr.w[zkey.power + 2]);
+            }
+
+            // Compute the coefficients of the polynomial T2(X) from buffers.T2
+            if (logger) logger.info("··· Computing T2 ifft");
+            polynomials.T2 = await Polynomial.fromEvaluations(buffers.T2, curve, logger);
+
+            // Divide the polynomial T2 by Z_H(X)
+            if (logger) logger.info("··· Computing T2 / ZH");
+            polynomials.T2.divByZerofier(zkey.domainSize, Fr.one);
+
+            // Compute the coefficients of the polynomial T2z(X) from buffers.T2z
+            if (logger) logger.info("··· Computing T2z ifft");
+            polynomials.T2z = await Polynomial.fromEvaluations(buffers.T2z, curve, logger);
+
+            // Add the polynomial T2z to T2 to get the final polynomial T2
+            polynomials.T2.add(polynomials.T2z);
+
+            // Check degree
+            if (polynomials.T2.degree() >= 3 * zkey.domainSize) {
+                throw new Error("T2 Polynomial is not well calculated");
+            }
+
+            delete buffers.T2;
+            delete buffers.T2z;
+            delete polynomials.T2z;
+        }
+
+        async function computeC2() {
+            let C2 = new CPolynomial(3, curve, logger);
+            C2.addPolynomial(0, polynomials.Z);
+            C2.addPolynomial(1, polynomials.T1);
+            C2.addPolynomial(2, polynomials.T2);
+
+            polynomials.C2 = C2.getPolynomial();
+
+            // Check degree
+            if (polynomials.C2.degree() >= 9 * zkey.domainSize) {
+                throw new Error("C2 Polynomial is not well calculated");
+            }
+        }
+    }
+
+    async function round3() {
+        if (logger) logger.info("> Computing challenge xi");
+        // STEP 3.1 - Compute evaluation challenge xi ∈ S
+        const transcript = new Keccak256Transcript(curve);
+        transcript.addScalar(challenges.gamma);
+        transcript.addPolCommitment(proof.getPolynomial("C2"));
+
+        // Obtain a xi_seeder from the transcript
+        // To force h1^4 = xi, h2^3 = xi and h_3^2 = xiω
+        // we compute xi = xi_seeder^12, h1 = xi_seeder^3, h2 = xi_seeder^4 and h3 = xi_seeder^6
+        challenges.xiSeed = transcript.getChallenge();
+        const xiSeed2 = Fr.square(challenges.xiSeed);
+
+        // Compute omega8, omega4 and omega3
+        roots.w8 = [];
+        roots.w8[0] = Fr.one;
+        for (let i = 1; i < 8; i++) {
+            roots.w8[i] = Fr.mul(roots.w8[i - 1], zkey.w8);
+        }
+
+        roots.w4 = [];
+        roots.w4[0] = Fr.one;
+        for (let i = 1; i < 4; i++) {
+            roots.w4[i] = Fr.mul(roots.w4[i - 1], zkey.w4);
+        }
+
+        roots.w3 = [];
+        roots.w3[0] = Fr.one;
+        roots.w3[1] = zkey.w3;
+        roots.w3[2] = Fr.square(zkey.w3);
+
+        // Compute h0 = xiSeeder^3
+        roots.S0 = {};
+        roots.S0.h0w8 = [];
+        roots.S0.h0w8[0] = Fr.mul(xiSeed2, challenges.xiSeed);
+        for (let i = 1; i < 8; i++) {
+            roots.S0.h0w8[i] = Fr.mul(roots.S0.h0w8[0], roots.w8[i]);
+        }
+
+        // Compute h1 = xi_seeder^6
+        roots.S1 = {};
+        roots.S1.h1w4 = [];
+        roots.S1.h1w4[0] = Fr.square(roots.S0.h0w8[0]);
+        for (let i = 1; i < 4; i++) {
+            roots.S1.h1w4[i] = Fr.mul(roots.S1.h1w4[0], roots.w4[i]);
+        }
+
+        // Compute h2 = xi_seeder^8
+        roots.S2 = {};
+        roots.S2.h2w3 = [];
+        roots.S2.h2w3[0] = Fr.mul(roots.S1.h1w4[0], xiSeed2);
+        roots.S2.h2w3[1] = Fr.mul(roots.S2.h2w3[0], roots.w3[1]);
+        roots.S2.h2w3[2] = Fr.mul(roots.S2.h2w3[0], roots.w3[2]);
+
+        roots.S2.h3w3 = [];
+        // Multiply h3 by third-root-omega to obtain h_3^3 = xiω
+        // So, h3 = xi_seeder^8 ω^{1/3}
+        roots.S2.h3w3[0] = Fr.mul(roots.S2.h2w3[0], zkey.wr);
+        roots.S2.h3w3[1] = Fr.mul(roots.S2.h3w3[0], roots.w3[1]);
+        roots.S2.h3w3[2] = Fr.mul(roots.S2.h3w3[0], roots.w3[2]);
+
+        // Compute xi = xi_seeder^24
+        challenges.xi = Fr.mul(Fr.square(roots.S2.h2w3[0]), roots.S2.h2w3[0]);
+
+        if (logger) logger.info("··· challenges.xi: " + Fr.toString(challenges.xi));
+
+        // Reserve memory for Q's polynomials
+        polynomials.QL = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QR = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QM = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QO = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+        polynomials.QC = new Polynomial(new ffjavascript.BigBuffer(sDomain), curve, logger);
+
+        // Read Q's evaluations from zkey file
+        await fdZKey.readToBuffer(polynomials.QL.coef, 0, sDomain, zkeySections[ZKEY_FF_QL_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QR.coef, 0, sDomain, zkeySections[ZKEY_FF_QR_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QM.coef, 0, sDomain, zkeySections[ZKEY_FF_QM_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QO.coef, 0, sDomain, zkeySections[ZKEY_FF_QO_SECTION][0].p);
+        await fdZKey.readToBuffer(polynomials.QC.coef, 0, sDomain, zkeySections[ZKEY_FF_QC_SECTION][0].p);
+
+        // STEP 3.2 - Compute opening evaluations and add them to the proof (third output of the prover)
+        if (logger) logger.info("··· Computing evaluations");
+        proof.addEvaluation("ql", polynomials.QL.evaluate(challenges.xi));
+        proof.addEvaluation("qr", polynomials.QR.evaluate(challenges.xi));
+        proof.addEvaluation("qm", polynomials.QM.evaluate(challenges.xi));
+        proof.addEvaluation("qo", polynomials.QO.evaluate(challenges.xi));
+        proof.addEvaluation("qc", polynomials.QC.evaluate(challenges.xi));
+        proof.addEvaluation("s1", polynomials.Sigma1.evaluate(challenges.xi));
+        proof.addEvaluation("s2", polynomials.Sigma2.evaluate(challenges.xi));
+        proof.addEvaluation("s3", polynomials.Sigma3.evaluate(challenges.xi));
+        proof.addEvaluation("a", polynomials.A.evaluate(challenges.xi));
+        proof.addEvaluation("b", polynomials.B.evaluate(challenges.xi));
+        proof.addEvaluation("c", polynomials.C.evaluate(challenges.xi));
+        proof.addEvaluation("z", polynomials.Z.evaluate(challenges.xi));
+
+        challenges.xiw = Fr.mul(challenges.xi, Fr.w[zkey.power]);
+        proof.addEvaluation("zw", polynomials.Z.evaluate(challenges.xiw));
+        proof.addEvaluation("t1w", polynomials.T1.evaluate(challenges.xiw));
+        proof.addEvaluation("t2w", polynomials.T2.evaluate(challenges.xiw));
+    }
+
+    async function round4() {
+        if (logger) logger.info("> Computing challenge alpha");
+        // STEP 4.1 - Compute challenge alpha ∈ F
+        const transcript = new Keccak256Transcript(curve);
+        transcript.addScalar(challenges.xiSeed);
+        transcript.addScalar(proof.getEvaluation("ql"));
+        transcript.addScalar(proof.getEvaluation("qr"));
+        transcript.addScalar(proof.getEvaluation("qm"));
+        transcript.addScalar(proof.getEvaluation("qo"));
+        transcript.addScalar(proof.getEvaluation("qc"));
+        transcript.addScalar(proof.getEvaluation("s1"));
+        transcript.addScalar(proof.getEvaluation("s2"));
+        transcript.addScalar(proof.getEvaluation("s3"));
+        transcript.addScalar(proof.getEvaluation("a"));
+        transcript.addScalar(proof.getEvaluation("b"));
+        transcript.addScalar(proof.getEvaluation("c"));
+        transcript.addScalar(proof.getEvaluation("z"));
+        transcript.addScalar(proof.getEvaluation("zw"));
+        transcript.addScalar(proof.getEvaluation("t1w"));
+        transcript.addScalar(proof.getEvaluation("t2w"));
+        challenges.alpha = transcript.getChallenge();
+        if (logger) logger.info("··· challenges.alpha: " + Fr.toString(challenges.alpha));
+
+        // STEP 4.2 - Compute F(X)
+        if (logger) logger.info("> Reading C0 polynomial");
+        polynomials.C0 = new Polynomial(new ffjavascript.BigBuffer(sDomain * 8), curve, logger);
+        await fdZKey.readToBuffer(polynomials.C0.coef, 0, sDomain * 8, zkeySections[ZKEY_FF_C0_SECTION][0].p);
+
+        if (logger) logger.info("> Computing R0 polynomial");
+        computeR0();
+        if (logger) logger.info("> Computing R1 polynomial");
+        computeR1();
+        if (logger) logger.info("> Computing R2 polynomial");
+        computeR2();
+
+        if (logger) logger.info("> Computing F polynomial");
+        await computeF();
+
+        // The fourth output of the prover is ([W1]_1), where W1:=(f/Z_t)(x)
+        if (logger) logger.info("> Computing W1 multi exponentiation");
+        let commitW1 = await polynomials.F.multiExponentiation(PTau, "W1");
+        proof.addPolynomial("W1", commitW1);
+
+        return 0;
+
+        function computeR0() {
+            // COMPUTE R0
+            // Compute the coefficients of R0(X) from 8 evaluations using lagrange interpolation. R0(X) ∈ F_{<8}[X]
+            // We decide to use Lagrange interpolations because the R0 degree is very small (deg(R0)===7),
+            // and we were not able to compute it using current ifft implementation because the omega are different
+            polynomials.R0 = Polynomial.lagrangePolynomialInterpolation(
+                [roots.S0.h0w8[0], roots.S0.h0w8[1], roots.S0.h0w8[2], roots.S0.h0w8[3],
+                    roots.S0.h0w8[4], roots.S0.h0w8[5], roots.S0.h0w8[6], roots.S0.h0w8[7]],
+                [polynomials.C0.evaluate(roots.S0.h0w8[0]), polynomials.C0.evaluate(roots.S0.h0w8[1]),
+                    polynomials.C0.evaluate(roots.S0.h0w8[2]), polynomials.C0.evaluate(roots.S0.h0w8[3]),
+                    polynomials.C0.evaluate(roots.S0.h0w8[4]), polynomials.C0.evaluate(roots.S0.h0w8[5]),
+                    polynomials.C0.evaluate(roots.S0.h0w8[6]), polynomials.C0.evaluate(roots.S0.h0w8[7])], curve);
+
+            // Check the degree of r0(X) < 8
+            if (polynomials.R0.degree() > 7) {
+                throw new Error("R0 Polynomial is not well calculated");
+            }
+        }
+
+        function computeR1() {
+            // COMPUTE R1
+            // Compute the coefficients of R1(X) from 4 evaluations using lagrange interpolation. R1(X) ∈ F_{<4}[X]
+            // We decide to use Lagrange interpolations because the R1 degree is very small (deg(R1)===3),
+            // and we were not able to compute it using current ifft implementation because the omega are different
+            polynomials.R1 = Polynomial.lagrangePolynomialInterpolation(
+                [roots.S1.h1w4[0], roots.S1.h1w4[1], roots.S1.h1w4[2], roots.S1.h1w4[3]],
+                [polynomials.C1.evaluate(roots.S1.h1w4[0]), polynomials.C1.evaluate(roots.S1.h1w4[1]),
+                    polynomials.C1.evaluate(roots.S1.h1w4[2]), polynomials.C1.evaluate(roots.S1.h1w4[3])], curve);
+
+            // Check the degree of r1(X) < 4
+            if (polynomials.R1.degree() > 3) {
+                throw new Error("R1 Polynomial is not well calculated");
+            }
+        }
+
+        function computeR2() {
+            // COMPUTE R2
+            // Compute the coefficients of r2(X) from 6 evaluations using lagrange interpolation. r2(X) ∈ F_{<6}[X]
+            // We decide to use Lagrange interpolations because the R2.degree is very small (deg(R2)===5),
+            // and we were not able to compute it using current ifft implementation because the omega are different
+            polynomials.R2 = Polynomial.lagrangePolynomialInterpolation(
+                [roots.S2.h2w3[0], roots.S2.h2w3[1], roots.S2.h2w3[2],
+                    roots.S2.h3w3[0], roots.S2.h3w3[1], roots.S2.h3w3[2]],
+                [polynomials.C2.evaluate(roots.S2.h2w3[0]), polynomials.C2.evaluate(roots.S2.h2w3[1]),
+                    polynomials.C2.evaluate(roots.S2.h2w3[2]), polynomials.C2.evaluate(roots.S2.h3w3[0]),
+                    polynomials.C2.evaluate(roots.S2.h3w3[1]), polynomials.C2.evaluate(roots.S2.h3w3[2])], curve);
+
+            // Check the degree of r2(X) < 6
+            if (polynomials.R2.degree() > 5) {
+                throw new Error("R2 Polynomial is not well calculated");
+            }
+        }
+
+        async function computeF() {
+            if (logger) logger.info("··· Computing F polynomial");
+
+            // COMPUTE F(X)
+            polynomials.F = Polynomial.fromPolynomial(polynomials.C0, curve, logger);
+            polynomials.F.sub(polynomials.R0);
+            polynomials.F.divByZerofier(8, challenges.xi);
+
+            let f2 = Polynomial.fromPolynomial(polynomials.C1, curve, logger);
+            f2.sub(polynomials.R1);
+            f2.mulScalar(challenges.alpha);
+            f2.divByZerofier(4, challenges.xi);
+
+            let f3 = Polynomial.fromPolynomial(polynomials.C2, curve, logger);
+            f3.sub(polynomials.R2);
+            f3.mulScalar(Fr.square(challenges.alpha));
+            f3.divByZerofier(3, challenges.xi);
+            f3.divByZerofier(3, challenges.xiw);
+
+            polynomials.F.add(f2);
+            polynomials.F.add(f3);
+
+            if (polynomials.F.degree() >= 9 * zkey.domainSize - 6) {
+                throw new Error("F Polynomial is not well calculated");
+            }
+        }
+    }
+
+    async function round5() {
+        if (logger) logger.info("> Computing challenge y");
+
+        // STEP 5.1 - Compute random evaluation point y ∈ F
+        const transcript = new Keccak256Transcript(curve);
+        transcript.addScalar(challenges.alpha);
+        transcript.addPolCommitment(proof.getPolynomial("W1"));
+
+        challenges.y = transcript.getChallenge();
+        if (logger) logger.info("··· challenges.y: " + Fr.toString(challenges.y));
+
+        // STEP 5.2 - Compute L(X)
+        if (logger) logger.info("> Computing L polynomial");
+        await computeL();
+
+        if (logger) logger.info("> Computing ZTS2 polynomial");
+        await computeZTS2();
+
+        let ZTS2Y = polynomials.ZTS2.evaluate(challenges.y);
+        ZTS2Y = Fr.inv(ZTS2Y);
+        polynomials.L.mulScalar(ZTS2Y);
+
+        const polDividend = Polynomial.fromCoefficientsArray([Fr.neg(challenges.y), Fr.one], curve);
+        if (logger) logger.info("> Computing W' = L / ZTS2 polynomial");
+        const polRemainder = polynomials.L.divBy(polDividend);
+
+        //Check polReminder degree is equal to zero
+        if (polRemainder.degree() > 0) {
+            throw new Error(`Degree of L(X)/(ZTS2(y)(X-y)) remainder is ${polRemainder.degree()} and should be 0`);
+        }
+
+        if (polynomials.L.degree() >= 9 * zkey.domainSize - 1) {
+            throw new Error("Degree of L(X)/(ZTS2(y)(X-y)) is not correct");
+        }
+
+        // The fifth output of the prover is ([W2]_1), where W2:=(f/Z_t)(x)
+        if (logger) logger.info("> Computing W' multi exponentiation");
+        let commitW2 = await polynomials.L.multiExponentiation(PTau, "W2");
+        proof.addPolynomial("W2", commitW2);
+
+        return 0;
+
+        async function computeL() {
+            if (logger) logger.info("··· Computing L polynomial");
+
+            const evalR0Y = polynomials.R0.evaluate(challenges.y);
+            const evalR1Y = polynomials.R1.evaluate(challenges.y);
+            const evalR2Y = polynomials.R2.evaluate(challenges.y);
+
+            let mulL0 = Fr.sub(challenges.y, roots.S0.h0w8[0]);
+            for (let i = 1; i < 8; i++) {
+                mulL0 = Fr.mul(mulL0, Fr.sub(challenges.y, roots.S0.h0w8[i]));
+            }
+
+            let mulL1 = Fr.sub(challenges.y, roots.S1.h1w4[0]);
+            for (let i = 1; i < 4; i++) {
+                mulL1 = Fr.mul(mulL1, Fr.sub(challenges.y, roots.S1.h1w4[i]));
+            }
+
+            let mulL2 = Fr.sub(challenges.y, roots.S2.h2w3[0]);
+            for (let i = 1; i < 3; i++) {
+                mulL2 = Fr.mul(mulL2, Fr.sub(challenges.y, roots.S2.h2w3[i]));
+            }
+            for (let i = 0; i < 3; i++) {
+                mulL2 = Fr.mul(mulL2, Fr.sub(challenges.y, roots.S2.h3w3[i]));
+            }
+
+            let preL0 = Fr.mul(mulL1, mulL2);
+            let preL1 = Fr.mul(challenges.alpha, Fr.mul(mulL0, mulL2));
+            let preL2 = Fr.mul(Fr.square(challenges.alpha), Fr.mul(mulL0, mulL1));
+
+            toInverse["denH1"] = mulL1;
+            toInverse["denH2"] = mulL2;
+
+            // COMPUTE L(X)
+            polynomials.L = Polynomial.fromPolynomial(polynomials.C0, curve, logger);
+            polynomials.L.subScalar(evalR0Y);
+            polynomials.L.mulScalar(preL0);
+
+            let l2 = Polynomial.fromPolynomial(polynomials.C1, curve, logger);
+            l2.subScalar(evalR1Y);
+            l2.mulScalar(preL1);
+
+            let l3 = Polynomial.fromPolynomial(polynomials.C2, curve, logger);
+            l3.subScalar(evalR2Y);
+            l3.mulScalar(preL2);
+
+            polynomials.L.add(l2);
+            polynomials.L.add(l3);
+
+            if (logger) logger.info("> Computing ZT polynomial");
+            await computeZT();
+
+            const evalZTY = polynomials.ZT.evaluate(challenges.y);
+            polynomials.F.mulScalar(evalZTY);
+            polynomials.L.sub(polynomials.F);
+
+            // Check degree
+            if (polynomials.L.degree() >= 9 * zkey.domainSize) {
+                throw new Error("L Polynomial is not well calculated");
+            }
+
+            delete buffers.L;
+        }
+
+        async function computeZT() {
+            polynomials.ZT = Polynomial.zerofierPolynomial(
+                [
+                    roots.S0.h0w8[0], roots.S0.h0w8[1], roots.S0.h0w8[2], roots.S0.h0w8[3],
+                    roots.S0.h0w8[4], roots.S0.h0w8[5], roots.S0.h0w8[6], roots.S0.h0w8[7],
+                    roots.S1.h1w4[0], roots.S1.h1w4[1], roots.S1.h1w4[2], roots.S1.h1w4[3],
+                    roots.S2.h2w3[0], roots.S2.h2w3[1], roots.S2.h2w3[2],
+                    roots.S2.h3w3[0], roots.S2.h3w3[1], roots.S2.h3w3[2]], curve);
+        }
+
+        async function computeZTS2() {
+            polynomials.ZTS2 = Polynomial.zerofierPolynomial(
+                [roots.S1.h1w4[0], roots.S1.h1w4[1], roots.S1.h1w4[2], roots.S1.h1w4[3],
+                    roots.S2.h2w3[0], roots.S2.h2w3[1], roots.S2.h2w3[2],
+                    roots.S2.h3w3[0], roots.S2.h3w3[1], roots.S2.h3w3[2]], curve);
+        }
+    }
+
+    function getMontgomeryBatchedInverse() {
+        //   · denominator needed in step 8 and 9 of the verifier to multiply by 1/Z_H(xi)
+        let xiN = challenges.xi;
+        for (let i = 0; i < zkey.power; i++) {
+            xiN = Fr.square(xiN);
+        }
+        toInverse["zh"] = Fr.sub(xiN, Fr.one);
+
+        //   · denominator needed in step 10 and 11 of the verifier
+        //     toInverse.denH1 & toInverse.denH2  -> Computed in round5, computeL()
+
+        //   · denominator needed in the verifier when computing L_i^{S0}(X), L_i^{S1}(X) and L_i^{S2}(X)
+        computeLiS0(toInverse, roots.S0.h0w8, challenges.y, curve);
+
+        computeLiS1(toInverse, roots.S1.h1w4, challenges.y, curve);
+
+        computeLiS2(toInverse, roots.S2.h2w3, roots.S2.h3w3, challenges.y, challenges.xi, challenges.xiw, curve);
+
+        //   · L_i i=1 to num public inputs, needed in step 6 and 7 of the verifier to compute L_1(xi) and PI(xi)
+        const size = Math.max(1, zkey.nPublic);
+
+        let w = Fr.one;
+        for (let i = 0; i < size; i++) {
+            toInverse["Li_" + (i + 1)] = Fr.mul(Fr.e(zkey.domainSize), Fr.sub(challenges.xi, w));
+            w = Fr.mul(w, Fr.w[zkey.power]);
+        }
+
+        let mulAccumulator = Fr.one;
+        for (const element of Object.values(toInverse)) {
+            if(Array.isArray(element)) {
+                for (const subElement of element) {
+                    mulAccumulator = Fr.mul(mulAccumulator, subElement);
+                }
+            } else {
+                mulAccumulator = Fr.mul(mulAccumulator, element);
+            }
+        }
+        return Fr.inv(mulAccumulator);
+
+        
+        function computeLiS0(toInverse, roots, x, curve) {
+            const Fr = curve.Fr;
+            const len = roots.length;
+        
+            const den1 = Fr.mul(Fr.e(len), Fr.exp(roots[0], len - 2));
+        
+            const Li = [];
+            for (let i = 0; i < len; i++) {
+                const den2 = roots[((len - 1) * i) % len];
+                const den3 = Fr.sub(x, roots[i]);
+        
+                toInverse[["LiS0_" + (i + 1)]] = Fr.mul(Fr.mul(den1, den2), den3);
+            }
+        
+            return Li;
+        }
+
+        function computeLiS1(toInverse, roots, x, curve) {
+            const Fr = curve.Fr;
+            const len = roots.length;
+        
+            const den1 = Fr.mul(Fr.e(len), Fr.exp(roots[0], len - 2));
+        
+            const Li = [];
+            for (let i = 0; i < len; i++) {
+                const den2 = roots[((len - 1) * i) % len];
+                const den3 = Fr.sub(x, roots[i]);
+        
+                toInverse[["LiS1_" + (i + 1)]] = Fr.mul(Fr.mul(den1, den2), den3);
+
+            }
+        
+            return Li;
+        }
+
+        function computeLiS2(toInverse, S2, S2p, value, xi, xiw, curve) {
+            const Fr = curve.Fr;
+        
+            const Li = [];
+        
+            const _3h2 = Fr.mul(Fr.e(3), S2[0]);
+            const xisubxiw = Fr.sub(xi, xiw);
+            let den1 = Fr.mul(_3h2, xisubxiw);
+            for (let i = 0; i < 3; i++) {
+                const den2 = S2[2 * i % 3];
+                const den3 = Fr.sub(value, S2[i]);
+        
+                toInverse[["LiS2_" + (i + 1)]] = Fr.mul(den1,Fr.mul(den2, den3));
+                
+            }
+        
+            const _3h3 = Fr.mul(Fr.e(3), S2p[0]);
+            const xiwsubxi = Fr.sub(xiw, xi);
+            den1 = Fr.mul(_3h3, xiwsubxi);
+            for (let i = 0; i < 3; i++) {
+                const den2 = S2p[2 * i % 3];
+                const den3 = Fr.sub(value, S2p[i]);
+        
+                toInverse[["LiS2_" + (i + 1 + 3)]] = Fr.mul(den1,Fr.mul(den2, den3));    
+            }
+        
+            return Li;
+        }
+    }
+}
+
+/*
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+const {unstringifyBigInts: unstringifyBigInts$2} = ffjavascript.utils;
+
+async function fflonkFullProve(_input, wasmFilename, zkeyFilename, logger) {
+    const input = unstringifyBigInts$2(_input);
+
+    const wtns= {type: "mem"};
+
+    // Compute the witness
+    await wtnsCalculate(input, wasmFilename, wtns);
+
+    // Compute the proof
+    return await fflonkProve(zkeyFilename, wtns, logger);
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+const { unstringifyBigInts: unstringifyBigInts$1 } = ffjavascript.utils;
+
+async function fflonkVerify(_vk_verifier, _publicSignals, _proof, logger) {
+    if (logger) logger.info("FFLONK VERIFIER STARTED");
+
+    _vk_verifier = unstringifyBigInts$1(_vk_verifier);
+    _proof = unstringifyBigInts$1(_proof);
+
+    const curve = await getCurveFromName(_vk_verifier.curve);
+
+    const vk = fromObjectVk(curve, _vk_verifier);
+
+    // TODO ??? Compute wr^3 and check if it matches with w
+
+    const proof = new Proof(curve, logger);
+    proof.fromObjectProof(_proof);
+
+    const publicSignals = unstringifyBigInts$1(_publicSignals);
+
+    if (publicSignals.length !== vk.nPublic) {
+        logger.error("Number of public signals does not match with vk");
+        return false;
+    }
+
+    const Fr = curve.Fr;
+
+    if (logger) {
+        logger.info("----------------------------");
+        logger.info("  FFLONK VERIFY SETTINGS");
+        logger.info(`  Curve:         ${curve.name}`);
+        logger.info(`  Circuit power: ${vk.power}`);
+        logger.info(`  Domain size:   ${2 ** vk.power}`);
+        logger.info(`  Public vars:   ${vk.nPublic}`);
+        logger.info("----------------------------");
+    }
+
+    // STEP 1 - Validate that all polynomial commitments ∈ G_1
+    if (logger) logger.info("> Checking commitments belong to G1");
+    if (!commitmentsBelongToG1(curve, proof, vk)) {
+        if (logger) logger.error("Proof commitments are not valid");
+        return false;
+    }
+
+    // STEP 2 - Validate that all evaluations ∈ F
+    if (logger) logger.info("> Checking evaluations belong to F");
+    if (!evaluationsAreValid(curve, proof)) {
+        if (logger) logger.error("Proof evaluations are not valid.");
+        return false;
+    }
+
+    // STEP 3 - Validate that w_i ∈ F for i ∈ [l]
+    if (logger) logger.info("> Checking public inputs belong to F");
+    if (!publicInputsAreValid(curve, publicSignals)) {
+        if (logger) logger.error("Public inputs are not valid.");
+        return false;
+    }
+
+    // STEP 4 - Compute the challenges: beta, gamma, xi, alpha and y ∈ F
+    // as in prover description, from the common preprocessed inputs, public inputs and elements of π_SNARK
+    if (logger) logger.info("> Computing challenges");
+    const { challenges, roots } = computeChallenges(curve, proof, vk, publicSignals, logger);
+
+    // STEP 5 - Compute the zero polynomial evaluation Z_H(xi) = xi^n - 1
+    if (logger) logger.info("> Computing Zero polynomial evaluation Z_H(xi)");
+    challenges.zh = Fr.sub(challenges.xiN, Fr.one);
+    challenges.invzh = Fr.inv(challenges.zh);
+
+    // STEP 6 - Compute the lagrange polynomial evaluation L_1(xi)
+    if (logger) logger.info("> Computing Lagrange evaluations");
+    const lagrangeEvals = await computeLagrangeEvaluations(curve, challenges, vk);
+
+    // STEP 7 - Compute public input evaluation PI(xi)
+    if (logger) logger.info("> Computing polynomial identities PI(X)");
+    const pi = calculatePI(curve, publicSignals, lagrangeEvals);
+
+    // STEP 8 - Compute polynomial r0 ∈ F_{<4}[X]
+    if (logger) logger.info("> Computing r0(y)");
+    const r0 = computeR0(proof, challenges, roots, curve, logger);
+
+    // STEP 9 - Compute polynomial r1 ∈ F_{<4}[X]
+    if (logger) logger.info("> Computing r1(y)");
+    const r1 = computeR1(proof, challenges, roots, pi, curve, logger);
+
+    // STEP 9 - Compute polynomial r2 ∈ F_{<6}[X]
+    if (logger) logger.info("> Computing r2(y)");
+    const r2 = computeR2(proof, challenges, roots, lagrangeEvals[1], vk, curve, logger);
+
+    if (logger) logger.info("> Computing F");
+    const F = computeF(curve, proof, vk, challenges, roots);
+
+    if (logger) logger.info("> Computing E");
+    const E = computeE(curve, proof, challenges, vk, r0, r1, r2);
+
+    if (logger) logger.info("> Computing J");
+    const J = computeJ(curve, proof, challenges);
+
+    if (logger) logger.info("> Validate all evaluations with a pairing");
+    const res = await isValidPairing(curve, proof, challenges, vk, F, E, J);
+
+    if (logger) {
+        if (res) {
+            logger.info("PROOF VERIFIED SUCCESSFULLY");
+        } else {
+            logger.warn("Invalid Proof");
+        }
+    }
+
+    if (logger) logger.info("FFLONK VERIFIER FINISHED");
+
+    return res;
+
+}
+
+function fromObjectVk(curve, vk) {
+    const res = vk;
+    res.k1 = curve.Fr.fromObject(vk.k1);
+    res.k2 = curve.Fr.fromObject(vk.k2);
+    res.w = curve.Fr.fromObject(vk.w);
+    // res.wW = curve.Fr.fromObject(vk.wW);
+    res.w3 = curve.Fr.fromObject(vk.w3);
+    res.w4 = curve.Fr.fromObject(vk.w4);
+    res.w8 = curve.Fr.fromObject(vk.w8);
+    res.wr = curve.Fr.fromObject(vk.wr);
+    res.X_2 = curve.G2.fromObject(vk.X_2);
+    res.C0 = curve.G1.fromObject(vk.C0);
+    return res;
+}
+
+function commitmentsBelongToG1(curve, proof, vk) {
+    const G1 = curve.G1;
+    return G1.isValid(proof.polynomials.C1)
+        && G1.isValid(proof.polynomials.C2)
+        && G1.isValid(proof.polynomials.W1)
+        && G1.isValid(proof.polynomials.W2)
+        && G1.isValid(vk.C0);
+}
+
+function checkValueBelongToField(curve, value) {
+    return ffjavascript.Scalar.lt(value, curve.r);
+}
+
+function checkEvaluationIsValid(curve, evaluation) {
+    return checkValueBelongToField(curve, ffjavascript.Scalar.fromRprLE(evaluation));
+}
+
+function evaluationsAreValid(curve, proof) {
+    return checkEvaluationIsValid(curve, proof.evaluations.ql)
+        && checkEvaluationIsValid(curve, proof.evaluations.qr)
+        && checkEvaluationIsValid(curve, proof.evaluations.qm)
+        && checkEvaluationIsValid(curve, proof.evaluations.qo)
+        && checkEvaluationIsValid(curve, proof.evaluations.qc)
+        && checkEvaluationIsValid(curve, proof.evaluations.s1)
+        && checkEvaluationIsValid(curve, proof.evaluations.s2)
+        && checkEvaluationIsValid(curve, proof.evaluations.s3)
+        && checkEvaluationIsValid(curve, proof.evaluations.a)
+        && checkEvaluationIsValid(curve, proof.evaluations.b)
+        && checkEvaluationIsValid(curve, proof.evaluations.c)
+        && checkEvaluationIsValid(curve, proof.evaluations.z)
+        && checkEvaluationIsValid(curve, proof.evaluations.zw)
+        && checkEvaluationIsValid(curve, proof.evaluations.t1w)
+        && checkEvaluationIsValid(curve, proof.evaluations.t2w);
+}
+
+function publicInputsAreValid(curve, publicInputs) {
+    for(let i = 0; i < publicInputs.length; i++) {
+        if(!checkValueBelongToField(curve, publicInputs[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function computeChallenges(curve, proof, vk, publicSignals, logger) {
+    const Fr = curve.Fr;
+
+    const challenges = {};
+    const roots = {};
+    const transcript = new Keccak256Transcript(curve);
+
+    // Add C0 to the transcript
+    transcript.addPolCommitment(vk.C0);
+
+    for (let i = 0; i < publicSignals.length; i++) {
+        transcript.addScalar(Fr.e(publicSignals[i]));
+    }
+
+    transcript.addPolCommitment(proof.polynomials.C1);
+    challenges.beta = transcript.getChallenge();
+    transcript.reset();
+
+    transcript.addScalar(challenges.beta);
+    challenges.gamma = transcript.getChallenge();
+
+    transcript.reset();
+    transcript.addScalar(challenges.gamma);
+    transcript.addPolCommitment(proof.polynomials.C2);
+    const xiSeed = transcript.getChallenge();
+    const xiSeed2 = Fr.square(xiSeed);
+
+    let w8 = [];
+    w8[1] = vk.w8;
+    w8[2] = Fr.square(vk.w8);
+    w8[3] = Fr.mul(w8[2], vk.w8);
+    w8[4] = Fr.mul(w8[3], vk.w8);
+    w8[5] = Fr.mul(w8[4], vk.w8);
+    w8[6] = Fr.mul(w8[5], vk.w8);
+    w8[7] = Fr.mul(w8[6], vk.w8);
+    let w4 = [];
+    w4[1] = vk.w4;
+    w4[2] = Fr.square(vk.w4);
+    w4[3] = Fr.mul(w4[2], vk.w4);
+    let w3 = [];
+    w3[1] = vk.w3;
+    w3[2] = Fr.square(vk.w3);
+
+    // const w4_2 = Fr.square(vk.w4);
+    // const w4_3 = Fr.mul(w4_2, vk.w4);
+    // const w3_2 = Fr.square(vk.w3);
+
+    // Compute h0 = xiSeeder^3
+    roots.S0 = {};
+    roots.S0.h0w8 = [];
+    roots.S0.h0w8[0] = Fr.mul(xiSeed2, xiSeed);
+    for (let i = 1; i < 8; i++) {
+        roots.S0.h0w8[i] = Fr.mul(roots.S0.h0w8[0], w8[i]);
+    }
+
+    // Compute h1 = xi_seeder^6
+    roots.S1 = {};
+    roots.S1.h1w4 = [];
+    roots.S1.h1w4[0] = Fr.square(roots.S0.h0w8[0]);
+    for (let i = 1; i < 4; i++) {
+        roots.S1.h1w4[i] = Fr.mul(roots.S1.h1w4[0], w4[i]);
+    }
+
+    // Compute h2 = xi_seeder^8
+    roots.S2 = {};
+    roots.S2.h2w3 = [];
+    roots.S2.h2w3[0] = Fr.mul(roots.S1.h1w4[0], xiSeed2);
+    roots.S2.h2w3[1] = Fr.mul(roots.S2.h2w3[0], w3[1]);
+    roots.S2.h2w3[2] = Fr.mul(roots.S2.h2w3[0], w3[2]);
+
+    roots.S2.h3w3 = [];
+    // Multiply h3 by third-root-omega to obtain h_3^3 = xiω
+    // So, h3 = xi_seeder^8 ω^{1/3}
+    roots.S2.h3w3[0] = Fr.mul(roots.S2.h2w3[0], vk.wr);
+    roots.S2.h3w3[1] = Fr.mul(roots.S2.h3w3[0], w3[1]);
+    roots.S2.h3w3[2] = Fr.mul(roots.S2.h3w3[0], w3[2]);
+
+    // Compute xi = xi_seeder^12
+    challenges.xi = Fr.mul(Fr.square(roots.S2.h2w3[0]), roots.S2.h2w3[0]);
+    challenges.xiw = Fr.mul(challenges.xi, Fr.w[vk.power]);
+
+    challenges.xiN = challenges.xi;
+    vk.domainSize = 1;
+    for (let i = 0; i < vk.power; i++) {
+        challenges.xiN = Fr.square(challenges.xiN);
+        vk.domainSize *= 2;
+    }
+
+    transcript.reset();
+    transcript.addScalar(xiSeed);
+    transcript.addScalar(proof.evaluations.ql);
+    transcript.addScalar(proof.evaluations.qr);
+    transcript.addScalar(proof.evaluations.qm);
+    transcript.addScalar(proof.evaluations.qo);
+    transcript.addScalar(proof.evaluations.qc);
+    transcript.addScalar(proof.evaluations.s1);
+    transcript.addScalar(proof.evaluations.s2);
+    transcript.addScalar(proof.evaluations.s3);
+    transcript.addScalar(proof.evaluations.a);
+    transcript.addScalar(proof.evaluations.b);
+    transcript.addScalar(proof.evaluations.c);
+    transcript.addScalar(proof.evaluations.z);
+    transcript.addScalar(proof.evaluations.zw);
+    transcript.addScalar(proof.evaluations.t1w);
+    transcript.addScalar(proof.evaluations.t2w);
+    challenges.alpha = transcript.getChallenge();
+
+    transcript.reset();
+    transcript.addScalar(challenges.alpha);
+    transcript.addPolCommitment(proof.polynomials.W1);
+    challenges.y = transcript.getChallenge();
+
+    if (logger) {
+        logger.info("··· challenges.beta:  " + Fr.toString(challenges.beta));
+        logger.info("··· challenges.gamma: " + Fr.toString(challenges.gamma));
+        logger.info("··· challenges.xi:    " + Fr.toString(challenges.xi));
+        logger.info("··· challenges.alpha: " + Fr.toString(challenges.alpha));
+        logger.info("··· challenges.y:     " + Fr.toString(challenges.y));
+    }
+
+    return { challenges: challenges, roots: roots };
+}
+
+async function computeLagrangeEvaluations(curve, challenges, vk) {
+    const Fr = curve.Fr;
+
+    const size = Math.max(1, vk.nPublic);
+    const numArr = new ffjavascript.BigBuffer(size * Fr.n8);
+    let denArr = new ffjavascript.BigBuffer(size * Fr.n8);
+
+    let w = Fr.one;
+    for (let i = 0; i < size; i++) {
+        const i_sFr = i * Fr.n8;
+        numArr.set(Fr.mul(w, challenges.zh), i_sFr);
+        denArr.set(Fr.mul(Fr.e(vk.domainSize), Fr.sub(challenges.xi, w)), i_sFr);
+        w = Fr.mul(w, vk.w);
+    }
+
+    denArr = await Fr.batchInverse(denArr);
+
+    let L = [];
+    for (let i = 0; i < size; i++) {
+        const i_sFr = i * Fr.n8;
+        L[i + 1] = Fr.mul(numArr.slice(i_sFr, i_sFr + Fr.n8), denArr.slice(i_sFr, i_sFr + Fr.n8));
+    }
+    return L;
+}
+
+function calculatePI(curve, publicSignals, lagrangeEvals) {
+    const Fr = curve.Fr;
+
+    let pi = Fr.zero;
+    for (let i = 0; i < publicSignals.length; i++) {
+        const w = Fr.e(publicSignals[i]);
+        pi = Fr.sub(pi, Fr.mul(w, lagrangeEvals[i + 1]));
+    }
+    return pi;
+}
+
+function computeR0(proof, challenges, roots, curve, logger) {
+    const Fr = curve.Fr;
+
+    const Li = computeLagrangeLiSi(roots.S0.h0w8, challenges.y, challenges.xi, curve);
+
+    // r0(y) = ∑_1^8 C_0(h_0 ω_8^{i-1}) L_i(y). To this end we need to compute
+
+    // Compute the 8 C0 values
+    if (logger) logger.info("··· Computing r0(y)");
+
+    let res = Fr.zero;
+    for (let i = 0; i < 8; i++) {
+        let coefValues = [];
+        coefValues[1] = roots.S0.h0w8[i];
+        for (let j = 2; j < 8; j++) {
+            coefValues[j] = Fr.mul(coefValues[j - 1], roots.S0.h0w8[i]);
+        }
+
+        let c0 = Fr.add(proof.evaluations.ql, Fr.mul(proof.evaluations.qr, coefValues[1]));
+        c0 = Fr.add(c0, Fr.mul(proof.evaluations.qo, coefValues[2]));
+        c0 = Fr.add(c0, Fr.mul(proof.evaluations.qm, coefValues[3]));
+        c0 = Fr.add(c0, Fr.mul(proof.evaluations.qc, coefValues[4]));
+        c0 = Fr.add(c0, Fr.mul(proof.evaluations.s1, coefValues[5]));
+        c0 = Fr.add(c0, Fr.mul(proof.evaluations.s2, coefValues[6]));
+        c0 = Fr.add(c0, Fr.mul(proof.evaluations.s3, coefValues[7]));
+
+        res = Fr.add(res, Fr.mul(c0, Li[i]));
+    }
+
+    return res;
+}
+
+function computeR1(proof, challenges, roots, pi, curve, logger) {
+    const Fr = curve.Fr;
+
+    const Li = computeLagrangeLiSi(roots.S1.h1w4, challenges.y, challenges.xi, curve);
+
+    // r1(y) = ∑_1^4 C_1(h_1 ω_4^{i-1}) L_i(y). To this end we need to compute
+    // Z1 = {C1(h_1}, C1(h_1 ω_4), C1(h_1 ω_4^2), C1(h_1 ω_4^3)}
+    // where C_1(h_1 ω_4^{i-1}) = eval.a + h_1 ω_4^i eval.b + (h_1 ω_4^i)^2 eval.c + (h_1 ω_4^i)^3 T0(xi),
+    // where T0(xi) = [ qL·a + qR·b + qM·a·b + qO·c + qC + PI(xi) ] / Z_H(xi)
+
+    // Compute T0(xi)
+    if (logger) logger.info("··· Computing T0(xi)");
+    let t0 = Fr.mul(proof.evaluations.ql, proof.evaluations.a);
+    t0 = Fr.add(t0, Fr.mul(proof.evaluations.qr, proof.evaluations.b));
+    t0 = Fr.add(t0, Fr.mul(proof.evaluations.qm, Fr.mul(proof.evaluations.a, proof.evaluations.b)));
+    t0 = Fr.add(t0, Fr.mul(proof.evaluations.qo, proof.evaluations.c));
+    t0 = Fr.add(t0, proof.evaluations.qc);
+    t0 = Fr.add(t0, pi);
+    t0 = Fr.mul(t0, challenges.invzh);
+
+    // Compute the 4 C1 values
+    if (logger) logger.info("··· Computing C1(h_1ω_4^i) values");
+
+    let res = Fr.zero;
+    for (let i = 0; i < 4; i++) {
+        let c1 = proof.evaluations.a;
+        c1 = Fr.add(c1, Fr.mul(roots.S1.h1w4[i], proof.evaluations.b));
+        const h1w4Squared = Fr.square(roots.S1.h1w4[i]);
+        c1 = Fr.add(c1, Fr.mul(h1w4Squared, proof.evaluations.c));
+        c1 = Fr.add(c1, Fr.mul(Fr.mul(h1w4Squared, roots.S1.h1w4[i]), t0));
+
+        res = Fr.add(res, Fr.mul(c1, Li[i]));
+    }
+
+    return res;
+}
+
+function computeR2(proof, challenges, roots, lagrange1, vk, curve, logger) {
+    const Fr = curve.Fr;
+
+    const LiS2 = computeLagrangeLiS2([roots.S2.h2w3, roots.S2.h3w3], challenges.y, challenges.xi, challenges.xiw, curve);
+
+    // r2(y) = ∑_1^3 C_2(h_2 ω_3^{i-1}) L_i(y) + ∑_1^3 C_2(h_3 ω_3^{i-1}) L_{i+3}(y). To this end we need to compute
+    // Z2 = {[C2(h_2}, C2(h_2 ω_3), C2(h_2 ω_3^2)], [C2(h_3}, C2(h_3 ω_3), C2(h_3 ω_3^2)]}
+    // where C_2(h_2 ω_3^{i-1}) = eval.z + h_2 ω_2^i T1(xi) + (h_2 ω_3^i)^2 T2(xi),
+    // where C_2(h_3 ω_3^{i-1}) = eval.z + h_3 ω_2^i T1(xi) + (h_3 ω_3^i)^2 T2(xi),
+    // where T1(xi) = [ L_1(xi)(z-1)] / Z_H(xi)
+    // and T2(xi) = [  (a + beta·xi + gamma)(b + beta·xi·k1 + gamma)(c + beta·xi·k2 + gamma)z
+    //               - (a + beta·sigma1 + gamma)(b + beta·sigma2 + gamma)(c + beta·sigma3 + gamma)zω  ] / Z_H(xi)
+
+    // Compute T1(xi)
+    if (logger) logger.info("··· Computing T1(xi)");
+    let t1 = Fr.sub(proof.evaluations.z, Fr.one);
+    t1 = Fr.mul(t1, lagrange1);
+    t1 = Fr.mul(t1, challenges.invzh);
+
+    // Compute T2(xi)
+    if (logger) logger.info("··· Computing T2(xi)");
+    const betaxi = Fr.mul(challenges.beta, challenges.xi);
+    const t211 = Fr.add(proof.evaluations.a, Fr.add(betaxi, challenges.gamma));
+    const t212 = Fr.add(proof.evaluations.b, Fr.add(Fr.mul(betaxi, vk.k1), challenges.gamma));
+    const t213 = Fr.add(proof.evaluations.c, Fr.add(Fr.mul(betaxi, vk.k2), challenges.gamma));
+    const t21 = Fr.mul(t211, Fr.mul(t212, Fr.mul(t213, proof.evaluations.z)));
+
+    const t221 = Fr.add(proof.evaluations.a, Fr.add(Fr.mul(challenges.beta, proof.evaluations.s1), challenges.gamma));
+    const t222 = Fr.add(proof.evaluations.b, Fr.add(Fr.mul(challenges.beta, proof.evaluations.s2), challenges.gamma));
+    const t223 = Fr.add(proof.evaluations.c, Fr.add(Fr.mul(challenges.beta, proof.evaluations.s3), challenges.gamma));
+    const t22 = Fr.mul(t221, Fr.mul(t222, Fr.mul(t223, proof.evaluations.zw)));
+
+    let t2 = Fr.sub(t21, t22);
+    t2 = Fr.mul(t2, challenges.invzh);
+
+    // Compute the 6 C2 values
+    if (logger) logger.info("··· Computing C2(h_2ω_3^i) values");
+    let res = Fr.zero;
+    for (let i = 0; i < 3; i++) {
+        let c2 = Fr.add(proof.evaluations.z, Fr.mul(roots.S2.h2w3[i], t1));
+        c2 = Fr.add(c2, Fr.mul(Fr.square(roots.S2.h2w3[i]), t2));
+
+        res = Fr.add(res, Fr.mul(c2, LiS2[i]));
+    }
+
+    if (logger) logger.info("··· Computing C2(h_3ω_3^i) values");
+    for (let i = 0; i < 3; i++) {
+        let c2 = Fr.add(proof.evaluations.zw, Fr.mul(roots.S2.h3w3[i], proof.evaluations.t1w));
+        c2 = Fr.add(c2, Fr.mul(Fr.square(roots.S2.h3w3[i]), proof.evaluations.t2w));
+
+        res = Fr.add(res, Fr.mul(c2, LiS2[i + 3]));
+    }
+
+    return res;
+}
+
+function computeF(curve, proof, vk, challenges, roots) {
+    const G1 = curve.G1;
+    const Fr = curve.Fr;
+
+    let mulH0 = Fr.sub(challenges.y, roots.S0.h0w8[0]);
+    for (let i = 1; i < 8; i++) {
+        mulH0 = Fr.mul(mulH0, Fr.sub(challenges.y, roots.S0.h0w8[i]));
+    }
+
+    challenges.temp = mulH0;
+
+    let mulH1 = Fr.sub(challenges.y, roots.S1.h1w4[0]);
+    for (let i = 1; i < 4; i++) {
+        mulH1 = Fr.mul(mulH1, Fr.sub(challenges.y, roots.S1.h1w4[i]));
+    }
+
+    let mulH2 = Fr.sub(challenges.y, roots.S2.h2w3[0]);
+    for (let i = 1; i < 3; i++) {
+        mulH2 = Fr.mul(mulH2, Fr.sub(challenges.y, roots.S2.h2w3[i]));
+    }
+    for (let i = 0; i < 3; i++) {
+        mulH2 = Fr.mul(mulH2, Fr.sub(challenges.y, roots.S2.h3w3[i]));
+    }
+
+    challenges.quotient1 = Fr.mul(challenges.alpha, Fr.div(mulH0, mulH1));
+    challenges.quotient2 = Fr.mul(Fr.square(challenges.alpha), Fr.div(mulH0, mulH2));
+
+    let F2 = G1.timesFr(proof.polynomials.C1, challenges.quotient1);
+    let F3 = G1.timesFr(proof.polynomials.C2, challenges.quotient2);
+
+    return G1.add(vk.C0, G1.add(F2, F3));
+}
+
+function computeE(curve, proof, challenges, vk, r0, r1, r2) {
+    const G1 = curve.G1;
+    const Fr = curve.Fr;
+
+    let E2 = Fr.mul(r1, challenges.quotient1);
+    let E3 = Fr.mul(r2, challenges.quotient2);
+
+    return G1.timesFr(G1.one, Fr.add(r0, Fr.add(E2, E3)));
+}
+
+function computeJ(curve, proof, challenges) {
+    const G1 = curve.G1;
+
+    return G1.timesFr(proof.polynomials.W1, challenges.temp);
+}
+
+async function isValidPairing(curve, proof, challenges, vk, F, E, J) {
+    const G1 = curve.G1;
+
+    let A1 = G1.timesFr(proof.polynomials.W2, challenges.y);
+    A1 = G1.add(G1.sub(G1.sub(F, E), J), A1);
+    const A2 = curve.G2.one;
+
+    const B1 = proof.polynomials.W2;
+    const B2 = vk.X_2;
+
+    return await curve.pairingEq(G1.neg(A1), A2, B1, B2);
+}
+
+
+function computeLagrangeLiSi(roots, x, xi, curve) {
+    const Fr = curve.Fr;
+    const len = roots.length;
+
+    const num = Fr.sub(Fr.exp(x, len), xi);
+    const den1 = Fr.mul(Fr.e(len), Fr.exp(roots[0], len - 2));
+
+    const Li = [];
+    for (let i = 0; i < len; i++) {
+        const den2 = roots[((len - 1) * i) % len];
+        const den3 = Fr.sub(x, roots[i]);
+
+        Li[i] = Fr.div(num, Fr.mul(Fr.mul(den1, den2), den3));
+    }
+
+    return Li;
+}
+
+function computeLagrangeLiS2(roots, value, xi0, xi1, curve) {
+    const Fr = curve.Fr;
+
+    const Li = [];
+
+    const len = roots[0].length;
+    const n = len * roots.length;
+
+    const num1 = Fr.exp(value, n);
+    const num2 = Fr.mul(Fr.add(xi0, xi1), Fr.exp(value, len));
+    const num3 = Fr.mul(xi0, xi1);
+    const num = Fr.add(Fr.sub(num1, num2), num3);
+
+    let den1 = Fr.mul(Fr.mul(Fr.e(len), roots[0][0]), Fr.sub(xi0, xi1));
+    for (let i = 0; i < len; i++) {
+        const den2 = roots[0][(len - 1) * i % len];
+        const den3 = Fr.sub(value, roots[0][i]);
+
+        const den = Fr.mul(den1,Fr.mul(den2, den3));
+
+        Li[i] = Fr.div(num, den);
+    }
+
+    den1 = Fr.mul(Fr.mul(Fr.e(len), roots[1][0]), Fr.sub(xi1, xi0));
+    for (let i = 0; i < len; i++) {
+        const den2 = roots[1][(len - 1) * i % len];
+        const den3 = Fr.sub(value, roots[1][i]);
+
+        const den = Fr.mul(den1,Fr.mul(den2, den3));
+
+        Li[i + len] = Fr.div(num, den);
+    }
+
+    return Li;
+}
+
+/*
+    Copyright 2021 0KIMS association.
+
+    This file is part of snarkJS.
+
+    snarkJS is a free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    snarkJS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+    License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+const {unstringifyBigInts} = ffjavascript.utils;
+
+function p256(n) {
+    let nstr = n.toString(16);
+    while (nstr.length < 64) nstr = "0" + nstr;
+    nstr = `0x${nstr}`;
+    return nstr;
+}
+
+async function fflonkExportCallData(_pub, _proof) {
+    const proof = unstringifyBigInts(_proof);
+    const pub = unstringifyBigInts(_pub);
+
+    const curve = await getCurveFromName(proof.curve);
+    curve.G1;
+    curve.Fr;
+
+    let inputs = "";
+    for (let i = 0; i < pub.length; i++) {
+        if (inputs !== "") inputs = inputs + ",";
+        inputs = inputs + p256(pub[i]);
+    }
+
+    return `[${p256(proof.polynomials.C1[0])}, ${p256(proof.polynomials.C1[1])},` +
+    `${p256(proof.polynomials.C2[0])},${p256(proof.polynomials.C2[1])},` +
+    `${p256(proof.polynomials.W1[0])},${p256(proof.polynomials.W1[1])},` +
+    `${p256(proof.polynomials.W2[0])},${p256(proof.polynomials.W2[1])},` +
+    `${p256(proof.evaluations.ql)},${p256(proof.evaluations.qr)},${p256(proof.evaluations.qm)},` +
+    `${p256(proof.evaluations.qo)},${p256(proof.evaluations.qc)},${p256(proof.evaluations.s1)},` +
+    `${p256(proof.evaluations.s2)},${p256(proof.evaluations.s3)},${p256(proof.evaluations.a)},` +
+    `${p256(proof.evaluations.b)},${p256(proof.evaluations.c)},${p256(proof.evaluations.z)},` +
+    `${p256(proof.evaluations.zw)},${p256(proof.evaluations.t1w)},${p256(proof.evaluations.t2w)},` +
+    `${p256(proof.evaluations.inv)}],` +
+    `[${inputs}]`;
+}
+
+/*
+    Copyright 2022 iden3 association.
+
+    This file is part of snarkjs.
+
+    snarkjs is a free software: you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    snarkjs is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.
+
+    You should have received a copy of the GNU General Public License along with
+    snarkjs. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+var fflonk = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    setup: fflonkSetup,
+    prove: fflonkProve,
+    fullProve: fflonkFullProve,
+    verify: fflonkVerify,
+    exportSolidityVerifier: fflonkExportSolidityVerifier,
+    exportSolidityCallData: fflonkExportCallData
+});
+
+exports.fflonk = fflonk;
 exports.groth16 = groth16;
 exports.plonk = plonk;
 exports.powersOfTau = powersoftau;

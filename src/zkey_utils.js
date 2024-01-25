@@ -50,7 +50,7 @@ import * as binFileUtils from "@iden3/binfileutils";
 import { getCurveFromQ as getCurve } from "./curves.js";
 import { log2 } from "./misc.js";
 import {FFLONK_PROTOCOL_ID, GROTH16_PROTOCOL_ID, PLONK_PROTOCOL_ID} from "./zkey_constants.js";
-import {ZKEY_FF_HEADER_SECTION} from "./fflonk.js";
+import {ZKEY_FF_HEADER_SECTION} from "./fflonk_constants.js";
 
 export async function writeHeader(fd, zkey) {
 
@@ -279,7 +279,7 @@ async function readHeaderPlonk(fd, sections, toObject) {
     zkey.domainSize = await fd.readULE32();
     zkey.power = log2(zkey.domainSize);
     zkey.nAdditions = await fd.readULE32();
-    zkey.nConstrains = await fd.readULE32();
+    zkey.nConstraints = await fd.readULE32();
     zkey.k1 = await fd.read(n8r);
     zkey.k2 = await fd.read(n8r);
 
