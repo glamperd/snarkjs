@@ -57,6 +57,22 @@
         "type": "node"
     },
     {
+        "name": "pot prepare phase2",
+        "program": "${workspaceFolder}/build/cli.cjs",
+        "args": [
+            "powersoftau",
+            "prepare",
+            "phase2",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_beacon_0005.ptau",
+            "\\\\wsl.localhost\\Ubuntu\\home\\geoff\\ptau\\pot10_0005\\test_"
+        ],
+        "request": "launch",
+        "skipFiles": [
+            "<node_internals>/**"
+        ],
+        "type": "node"
+    },
+    {
         "name": "pot extract pubkey",
         "program": "${workspaceFolder}/build/cli.cjs",
         "args": [
