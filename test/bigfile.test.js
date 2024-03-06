@@ -9,7 +9,7 @@ describe("Read a large file", function ()  {
 
     it ("reads ptau file", async () => {
         const file = "//wsl.localhost/Ubuntu/home/geoff/ptau/pot10_0004_beacon.ptau";
-        const p = 10; //29
+        const p = 10;
         //"../data/pot28_beacon.ptau"
         const {fd: fdOld, sections} = await binFileUtils.readBinFile(file, "ptau", 1);
         const {curve} = await utils.readPTauHeader(fdOld, sections);
