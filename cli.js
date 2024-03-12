@@ -104,6 +104,22 @@ const commands = [
         action: powersOfTauPreparePhase2
     },
     {
+        cmd: "powersoftau prepare section <powersoftau.ptau> <new_powersoftau.ptau> <section> <fromPower> <toPower>",
+        description: "Prepares phase 2. ",
+        longDescription: " This process calculates the evaluation of the Lagrange polinomials at tau for alpha*tau and beta tau",
+        alias: ["p2s"],
+        options: "-verbose|v",
+        action: powersOfTauPrepareSection
+    },
+    {
+        cmd: "powersoftau prepare merge <pot_section.ptau> <new_powersoftau.ptau>",
+        description: "Merges a prepared section",
+        longDescription: " This process merges a prepared section to a phase 2 file",
+        alias: ["ppm"],
+        options: "-verbose|v",
+        action: powersOfTauPrepareMerge
+    },
+    {
         cmd: "powersoftau convert <old_powersoftau.ptau> <new_powersoftau.ptau>",
         description: "Convert ptau",
         longDescription: " This process calculates the evaluation of the Lagrange polynomials at tau for alpha*tau and beta tau",
@@ -807,6 +823,34 @@ async function powersOfTauPreparePhase2(params, options) {
     if (options.verbose) Logger.setLogLevel("DEBUG");
 
     return await powersOfTau.preparePhase2(oldPtauName, newPtauName, logger);
+}
+
+async function powersOfTauPrepareSection(params, options) {
+    let oldPtauName;
+    let newPtauName;
+    let section;
+    let fromPower;
+    let toPower;
+
+    oldPtauName = params[0];
+    newPtauName = params[1];
+    section = params[2];
+    fromPower = params[3];
+    toPower = params[4];
+
+    if (options.verbose) Logger.setLogLevel("DEBUG");
+    return await powersOfTau.prepareSection(oldPtauName, newPtauName, section, fromPower, toPower, logger);
+}
+
+async function powersOfTauPrepareMerge(params, options) {
+    let sectionPtauName;
+    let newPtauName;
+
+    sectionPtauName = params[0];
+    newPtauName = params[1];
+
+    if (options.verbose) Logger.setLogLevel("DEBUG");
+    return await powersOfTau.prepareSectionMerge(sectionPtauName, newPtauName, logger);
 }
 
 async function powersOfTauConvert(params, options) {

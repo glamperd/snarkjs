@@ -28,3 +28,5 @@ export {default as preparePhase2} from "./powersoftau_preparephase2.js";
 export {default as truncate} from "./powersoftau_truncate.js";
 export {default as convert} from "./powersoftau_convert.js";
 export {default as exportJson} from "./powersoftau_export_json.js";
+export {default as prepareSection} from "./powersoftau_prepare_section.js";
+export {default as prepareSectionMerge} from "./powersoftau_prepare_section_merge.js";
