@@ -24,13 +24,11 @@ export default async function prepareSectionMerge(oldPtauFilename, newPTauFilena
 
     const params = /(.+)_(\d+)_(\d+)_(\d+)/.exec(oldPtauFilename);
     const section = params[2];
-    const fromPower = params[3];
-    const toPower = params[4];
 
     const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power} = await utils.readPTauHeader(fdOld, sections);
 
-    const {fd: fdNew, sections: newSections} = await binFileUtils.readBinFile(newPTauFilename, "ptau", 1);
+    const {fd: fdNew} = await binFileUtils.readBinFile(newPTauFilename, "ptau", 1);
     await utils.writePTauHeader(fdNew, curve, power);
 
     await binFileUtils.copySection(fdOld, sections, fdNew, section);

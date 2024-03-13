@@ -26,7 +26,8 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
     const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power} = await utils.readPTauHeader(fdOld, sections);
 
-    const newName = `${newPTauFilename}_s${section}_${fromPower}_${toPower}`;
+    const newSection = 10 + section;
+    const newName = `${newPTauFilename}_s${newSection}_${fromPower}_${toPower}`;
     const fdNew = await binFileUtils.createBinFile(newName, "ptau", 1, 11);
     await utils.writePTauHeader(fdNew, curve, power);
 
@@ -39,16 +40,16 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
 
     switch (section) {
     case 2: 
-        await processSection(2, 12, "G1", "tauG1", fromPower, toPower ); 
+        await processSection(2, newSection, "G1", "tauG1", fromPower, toPower ); 
         break;
     case 3: 
-        await processSection(3, 13, "G2", "tauG2", fromPower, toPower );
+        await processSection(3, newSection, "G2", "tauG2", fromPower, toPower );
         break;
     case 4: 
-        await processSection(4, 14, "G1", "alphaTauG1", fromPower, toPower );
+        await processSection(4, newSection, "G1", "alphaTauG1", fromPower, toPower );
         break;
     case 5:
-        await processSection(5, 15, "G1", "betaTauG1", fromPower, toPower );
+        await processSection(5, newSection, "G1", "betaTauG1", fromPower, toPower );
         break;
     default:
     }
