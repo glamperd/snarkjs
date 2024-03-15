@@ -2994,6 +2994,209 @@ async function exportJson(pTauFilename, verbose) {
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
 */
 
+async function prepareSection(oldPtauFilename, newPTauFilename, section, fromPower, toPower, logger) {
+
+    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1);
+    const {curve, power} = await readPTauHeader(fdOld, sections);
+
+    const newSection = 10 + Number(section);
+    const newName = `${newPTauFilename}_s${newSection}_${fromPower}_${toPower}.ptau`;
+    const fdNew = await binFileUtils__namespace.createBinFile(newName, "ptau", 1, 11);
+    await writePTauHeader(fdNew, curve, power);
+
+    // await binFileUtils.copySection(fdOld, sections, fdNew, 2);
+    // await binFileUtils.copySection(fdOld, sections, fdNew, 3);
+    // await binFileUtils.copySection(fdOld, sections, fdNew, 4);
+    // await binFileUtils.copySection(fdOld, sections, fdNew, 5);
+    // await binFileUtils.copySection(fdOld, sections, fdNew, 6);
+    // await binFileUtils.copySection(fdOld, sections, fdNew, 7);
+
+    switch (Number(section)) {
+    case 2: 
+        await processSection(2, newSection, "G1", "tauG1", fromPower, toPower ); 
+        break;
+    case 3: 
+        await processSection(3, newSection, "G2", "tauG2", fromPower, toPower );
+        break;
+    case 4: 
+        await processSection(4, newSection, "G1", "alphaTauG1", fromPower, toPower );
+        break;
+    case 5:
+        await processSection(5, newSection, "G1", "betaTauG1", fromPower, toPower );
+        break;
+    default:
+        logger.info(`Invalid section number ${section}`);
+    }
+
+    await fdOld.close();
+    await fdNew.close();
+
+    // await fs.promises.unlink(newPTauFilename+ ".tmp");
+
+    return;
+
+    async function processSection(oldSectionId, newSectionId, Gstr, sectionName, fromPower, toPower) {
+        if (logger) logger.debug("Starting section: "+sectionName+":"+fromPower+" to "+toPower);
+
+        await binFileUtils__namespace.startWriteSection(fdNew, newSectionId);
+
+        for (let p=fromPower; p<=toPower; p++) {
+            await processSectionPower(p);
+        }
+
+        if (oldSectionId == 2 && toPower>power) {
+            await processSectionPower(power+1);
+        }
+
+        await binFileUtils__namespace.endWriteSection(fdNew);
+
+
+        async function processSectionPower(p) {
+            const nPoints = 2 ** p;
+            const G = curve[Gstr];
+            curve.Fr;
+            const sGin = G.F.n8*2;
+            G.F.n8*3;
+
+            let buff;
+            buff = new ffjavascript.BigBuffer(nPoints*sGin);
+
+            await binFileUtils__namespace.startReadUniqueSection(fdOld, sections, oldSectionId);
+            if ((oldSectionId == 2)&&(p==power+1)) {
+                await fdOld.readToBuffer(buff, 0,(nPoints-1)*sGin );
+                buff.set(curve.G1.zeroAffine, (nPoints-1)*sGin );
+            } else {
+                await fdOld.readToBuffer(buff, 0,nPoints*sGin );
+            }
+            await binFileUtils__namespace.endReadSection(fdOld, true);
+
+
+            buff = await G.lagrangeEvaluations(buff, "affine", "affine", logger, sectionName);
+            await fdNew.write(buff);
+
+/*
+            if (p <= curve.Fr.s) {
+                buff = await G.ifft(buff, "affine", "affine", logger, sectionName);
+                await fdNew.write(buff);
+            } else if (p == curve.Fr.s+1) {
+                const smallM = 1<<curve.Fr.s;
+                let t0 = new BigBuffer( smallM * sGmid );
+                let t1 = new BigBuffer( smallM * sGmid );
+
+                const shift_to_small_m = Fr.exp(Fr.shift, smallM);
+                const one_over_denom = Fr.inv(Fr.sub(shift_to_small_m, Fr.one));
+
+                let sInvAcc = Fr.one;
+                for (let i=0; i<smallM; i++) {
+                    const ti =  buff.slice(i*sGin, (i+1)*sGin);
+                    const tmi = buff.slice((i+smallM)*sGin, (i+smallM+1)*sGin);
+
+                    t0.set(
+                        G.timesFr(
+                            G.sub(
+                                G.timesFr(ti , shift_to_small_m),
+                                tmi
+                            ),
+                            one_over_denom
+                        ),
+                        i*sGmid
+                    );
+                    t1.set(
+                        G.timesFr(
+                            G.sub( tmi, ti),
+                            Fr.mul(sInvAcc, one_over_denom)
+                        ),
+                        i*sGmid
+                    );
+
+
+                    sInvAcc = Fr.mul(sInvAcc, Fr.shiftInv);
+                }
+                t0 = await G.ifft(t0, "jacobian", "affine", logger, sectionName + " t0");
+                await fdNew.write(t0);
+                t0 = null;
+                t1 = await G.ifft(t1, "jacobian", "affine", logger, sectionName + " t0");
+                await fdNew.write(t1);
+
+            } else {
+                if (logger) logger.error("Power too big");
+                throw new Error("Power to big");
+            }
+*/
+        }
+    }
+}
+
+/*
+    Copyright 2018 0KIMS association.
+
+    This file is part of snarkJS.
+
+    snarkJS is a free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    snarkJS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+    License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+async function prepareSectionMerge(oldPtauFilename, sectionFile, newPTauFilename, logger) {
+
+    const params = /(.+)_s(\d+)_(\d+)_(\d+)/.exec(sectionFile);
+    const section = Number(params[2]);
+
+    const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1); // Has progress to date
+    const { curve, power } = await readPTauHeader(fdOld, sections);
+
+    const {fd: fdSec, sections: secSections} = await binFileUtils__namespace.readBinFile(sectionFile, "ptau", 1); // Has section to merge
+
+    const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 11);
+    await writePTauHeader(fdNew, curve, power);
+
+    // Copy sections 2 to section-1 from old
+    for (let s = 2; s < section; s++) {
+        if (sections[s] ) {
+            if (logger) logger.debug(`Copying section ${s}`);
+            await binFileUtils__namespace.copySection(fdOld, sections, fdNew, s);
+        }
+    }
+    // Add new section
+    if (logger) logger.debug(`Adding section ${section}`);
+    await binFileUtils__namespace.copySection(fdSec, secSections, fdNew, section);
+
+    await fdOld.close();
+    await fdSec.close();
+    await fdNew.close();
+
+    return;
+
+}
+
+/*
+    Copyright 2018 0KIMS association.
+
+    This file is part of snarkJS.
+
+    snarkJS is a free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    snarkJS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+    License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
+*/
+
 const SUBARRAY_SIZE = 0x40000;
 
 const BigArrayHandler = {
@@ -12451,16 +12654,32 @@ const commands = [
         action: powersOfTauPreparePhase2
     },
     {
+        cmd: "powersoftau prepare section <powersoftau.ptau> <new_powersoftau.ptau> <section> <fromPower> <toPower>",
+        description: "Prepares phase 2. ",
+        longDescription: " This process calculates the evaluation of the Lagrange polinomials at tau for alpha*tau and beta tau",
+        alias: ["p2s"],
+        options: "-verbose|v",
+        action: powersOfTauPrepareSection
+    },
+    {
+        cmd: "powersoftau prepare merge <old_powersoftau.ptau> <new_section.ptau> <new_powersoftau.ptau>",
+        description: "Merges a prepared section",
+        longDescription: " This process merges a prepared section to a phase 2 file",
+        alias: ["ppm"],
+        options: "-verbose|v",
+        action: powersOfTauPrepareMerge
+    },
+    {
         cmd: "powersoftau convert <old_powersoftau.ptau> <new_powersoftau.ptau>",
         description: "Convert ptau",
-        longDescription: " This process calculates the evaluation of the Lagrange polinomials at tau for alpha*tau and beta tau",
+        longDescription: " This process calculates the evaluation of the Lagrange polynomials at tau for alpha*tau and beta tau",
         alias: ["ptcv"],
         options: "-verbose|v",
         action: powersOfTauConvert
     },
     {
         cmd: "powersoftau truncate <powersoftau.ptau>",
-        description: "Generate diferent powers of tau with smoller sizes ",
+        description: "Generate diferent powers of tau with smaller sizes ",
         longDescription: " This process generates smaller ptau files from a bigger power ptau",
         alias: ["ptt"],
         options: "-verbose|v",
@@ -12482,7 +12701,7 @@ const commands = [
     },
     {
         cmd: "r1cs info [circuit.r1cs]",
-        description: "Print statistiscs of a circuit",
+        description: "Print statistics of a circuit",
         alias: ["ri", "info -r|r1cs:circuit.r1cs"],
         action: r1csInfo
     },
@@ -13154,6 +13373,36 @@ async function powersOfTauPreparePhase2(params, options) {
     if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
 
     return await preparePhase2(oldPtauName, newPtauName, logger);
+}
+
+async function powersOfTauPrepareSection(params, options) {
+    let oldPtauName;
+    let newPtauName;
+    let section;
+    let fromPower;
+    let toPower;
+
+    oldPtauName = params[0];
+    newPtauName = params[1];
+    section = params[2];
+    fromPower = params[3];
+    toPower = params[4];
+
+    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    return await prepareSection(oldPtauName, newPtauName, section, fromPower, toPower, logger);
+}
+
+async function powersOfTauPrepareMerge(params, options) {
+    let oldPtauName;
+    let sectionPtauName;
+    let newPtauName;
+
+    oldPtauName = params[0];
+    sectionPtauName = params[1];
+    newPtauName = params[2];
+
+    if (options.verbose) Logger__default["default"].setLogLevel("DEBUG");
+    return await prepareSectionMerge(oldPtauName, sectionPtauName, newPtauName, logger);
 }
 
 async function powersOfTauConvert(params, options) {

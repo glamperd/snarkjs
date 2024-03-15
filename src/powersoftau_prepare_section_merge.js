@@ -20,20 +20,32 @@
 import * as binFileUtils from "@iden3/binfileutils";
 import * as utils from "./powersoftau_utils.js";
 
-export default async function prepareSectionMerge(oldPtauFilename, newPTauFilename, logger) {
+export default async function prepareSectionMerge(oldPtauFilename, sectionFile, newPTauFilename, logger) {
 
-    const params = /(.+)_(\d+)_(\d+)_(\d+)/.exec(oldPtauFilename);
-    const section = params[2];
+    const params = /(.+)_s(\d+)_(\d+)_(\d+)/.exec(sectionFile);
+    const section = Number(params[2]);
 
-    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
-    const {curve, power} = await utils.readPTauHeader(fdOld, sections);
+    const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1); // Has progress to date
+    const { curve, power } = await utils.readPTauHeader(fdOld, sections);
 
-    const {fd: fdNew} = await binFileUtils.readBinFile(newPTauFilename, "ptau", 1);
+    const {fd: fdSec, sections: secSections} = await binFileUtils.readBinFile(sectionFile, "ptau", 1); // Has section to merge
+
+    const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 11);
     await utils.writePTauHeader(fdNew, curve, power);
 
-    await binFileUtils.copySection(fdOld, sections, fdNew, section);
+    // Copy sections 2 to section-1 from old
+    for (let s = 2; s < section; s++) {
+        if (sections[s] ) {
+            if (logger) logger.debug(`Copying section ${s}`);
+            await binFileUtils.copySection(fdOld, sections, fdNew, s);
+        }
+    }
+    // Add new section
+    if (logger) logger.debug(`Adding section ${section}`);
+    await binFileUtils.copySection(fdSec, secSections, fdNew, section);
 
     await fdOld.close();
+    await fdSec.close();
     await fdNew.close();
 
     return;

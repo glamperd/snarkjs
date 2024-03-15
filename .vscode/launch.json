@@ -1,18 +1,15 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-    {
-        "name": "Attach",
-        "port": 9229,
-        "request": "attach",
-        "skipFiles": [
-            "<node_internals>/**"
-        ],
-        "type": "pwa-node"
-    },
+        {
+            "name": "Attach",
+            "port": 9229,
+            "request": "attach",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "pwa-node"
+        },
         {
             "type": "pwa-node",
             "request": "launch",
@@ -24,7 +21,7 @@
             "args": [
                 "pks",
                 "test/plonk_circuit/circuit.r1cs",
-                "test/plonk_circuit/powersOfTau15_final.ptau", 
+                "test/plonk_circuit/powersOfTau15_final.ptau",
                 "test/plonk_circuit/circuit.zkey"
             ]
         },
@@ -39,7 +36,7 @@
             "args": [
                 "pkp",
                 "test/plonk_circuit/circuit.zkey",
-                "test/plonk_circuit/witness.wtns", 
+                "test/plonk_circuit/witness.wtns",
                 "test/plonk_circuit/proof.json",
                 "test/plonk_circuit/public.json",
                 "-v"
@@ -56,7 +53,7 @@
             "args": [
                 "zkev",
                 "test/plonk_circuit/circuit.zkey",
-                "test/plonk_circuit/verification_key.json",
+                "test/plonk_circuit/verification_key.json"
             ]
         },
         {
@@ -86,7 +83,7 @@
             "args": [
                 "zkesc",
                 "test/plonk_circuit/public.json",
-                "test/plonk_circuit/proof.json",
+                "test/plonk_circuit/proof.json"
             ]
         },
         {
@@ -100,16 +97,39 @@
             "args": [
                 "zkesv",
                 "test/plonk_circuit/circuit.zkey",
-                "test/plonk_circuit/verifier.sol",
+                "test/plonk_circuit/verifier.sol"
             ]
         },
-        {            
-            "type": "node",            
-            "request": "launch",            
-            "name": "Mocha all tests",            
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Mocha all tests",
             "program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
-            "cwd": "${workspaceRoot}",   
-            "internalConsoleOptions": "openOnSessionStart"        
-         }
+            "cwd": "${workspaceRoot}",
+            "internalConsoleOptions": "openOnSessionStart"
+        },
+        {
+            "type": "pwa-node",
+            "request": "launch",
+            "name": "prepare merge",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "cli.js",
+            "args": [
+                "powersoftau",
+                "prepare",
+                "merge",
+                "./data/pot10_prep2_0005.ptau",
+                "./data/pot10_prep2_0005_s14_0_10.ptau",
+                "./data/pot10_new_1.ptau"
+            ]
+        },
+        {
+            "type": "node",
+            "name": "Run Current File",
+            "request": "launch",
+            "program": "${workspaceFolder}\\src\\powersoftau_prepare_section_merge.js"
+        }
     ]
 }

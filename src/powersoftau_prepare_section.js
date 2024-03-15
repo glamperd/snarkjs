@@ -26,8 +26,8 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
     const {fd: fdOld, sections} = await binFileUtils.readBinFile(oldPtauFilename, "ptau", 1);
     const {curve, power} = await utils.readPTauHeader(fdOld, sections);
 
-    const newSection = 10 + section;
-    const newName = `${newPTauFilename}_s${newSection}_${fromPower}_${toPower}`;
+    const newSection = 10 + Number(section);
+    const newName = `${newPTauFilename}_s${newSection}_${fromPower}_${toPower}.ptau`;
     const fdNew = await binFileUtils.createBinFile(newName, "ptau", 1, 11);
     await utils.writePTauHeader(fdNew, curve, power);
 
@@ -38,7 +38,7 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
     // await binFileUtils.copySection(fdOld, sections, fdNew, 6);
     // await binFileUtils.copySection(fdOld, sections, fdNew, 7);
 
-    switch (section) {
+    switch (Number(section)) {
     case 2: 
         await processSection(2, newSection, "G1", "tauG1", fromPower, toPower ); 
         break;
@@ -52,6 +52,7 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
         await processSection(5, newSection, "G1", "betaTauG1", fromPower, toPower );
         break;
     default:
+        logger.info(`Invalid section number ${section}`)
     }
 
     await fdOld.close();

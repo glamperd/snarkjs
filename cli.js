@@ -112,7 +112,7 @@ const commands = [
         action: powersOfTauPrepareSection
     },
     {
-        cmd: "powersoftau prepare merge <pot_section.ptau> <new_powersoftau.ptau>",
+        cmd: "powersoftau prepare merge <old_powersoftau.ptau> <new_section.ptau> <new_powersoftau.ptau>",
         description: "Merges a prepared section",
         longDescription: " This process merges a prepared section to a phase 2 file",
         alias: ["ppm"],
@@ -843,14 +843,16 @@ async function powersOfTauPrepareSection(params, options) {
 }
 
 async function powersOfTauPrepareMerge(params, options) {
+    let oldPtauName;
     let sectionPtauName;
     let newPtauName;
 
-    sectionPtauName = params[0];
-    newPtauName = params[1];
+    oldPtauName = params[0];
+    sectionPtauName = params[1];
+    newPtauName = params[2];
 
     if (options.verbose) Logger.setLogLevel("DEBUG");
-    return await powersOfTau.prepareSectionMerge(sectionPtauName, newPtauName, logger);
+    return await powersOfTau.prepareSectionMerge(oldPtauName, sectionPtauName, newPtauName, logger);
 }
 
 async function powersOfTauConvert(params, options) {
