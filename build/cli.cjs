@@ -3040,7 +3040,7 @@ async function prepareSection(oldPtauFilename, newPTauFilename, section, fromPow
 
         await binFileUtils__namespace.startWriteSection(fdNew, newSectionId);
 
-        for (let p=fromPower; p<=toPower; p++) {
+        for (let p=fromPower; p<=Math.min(toPower, power); p++) {
             await processSectionPower(p);
         }
 
@@ -3150,6 +3150,8 @@ async function prepareSectionMerge(oldPtauFilename, sectionFile, newPTauFilename
 
     const params = /(.+)_s(\d+)_(\d+)_(\d+)/.exec(sectionFile);
     const section = Number(params[2]);
+    const fromPower = Number(params[3]);
+    const toPower = Number(params[4]);
 
     const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1); // Has progress to date
     const { curve, power } = await readPTauHeader(fdOld, sections);
@@ -3159,16 +3161,32 @@ async function prepareSectionMerge(oldPtauFilename, sectionFile, newPTauFilename
     const fdNew = await binFileUtils__namespace.createBinFile(newPTauFilename, "ptau", 1, 11);
     await writePTauHeader(fdNew, curve, power);
 
+    let isMerge = false;
+    if ((section == 2 && toPower < power+1) ||
+        (section > 2 && toPower < power) ||
+        fromPower > 0) {
+        isMerge = true;
+    } 
+
     // Copy sections 2 to section-1 from old
     for (let s = 2; s < section; s++) {
-        if (sections[s] ) {
+        if (sections[s]) {
             if (logger) logger.debug(`Copying section ${s}`);
             await binFileUtils__namespace.copySection(fdOld, sections, fdNew, s);
         }
     }
-    // Add new section
-    if (logger) logger.debug(`Adding section ${section}`);
-    await binFileUtils__namespace.copySection(fdSec, secSections, fdNew, section);
+
+    if (isMerge) {
+        // Merge a section's parts: copy 1st part, copy 2nd, then finalise. 
+        if (logger) logger.debug(`Adding section ${section} part 1`);
+        await mergeSectionParts(fdOld, sections, fdNew, section, 1);
+        if (logger) logger.debug(`Adding section ${section} part 2`);
+        await mergeSectionParts(fdSec, secSections, fdNew, section, 2);
+    } else {
+        // Add new section
+        if (logger) logger.debug(`Adding section ${section}`);
+        await binFileUtils__namespace.copySection(fdSec, secSections, fdNew, section);
+    }
 
     await fdOld.close();
     await fdSec.close();
@@ -3176,6 +3194,24 @@ async function prepareSectionMerge(oldPtauFilename, sectionFile, newPTauFilename
 
     return;
 
+}
+
+async function mergeSectionParts(fdFrom, sections, fdTo, sectionId, part) {
+    const size = sections[sectionId][0].size;
+    const chunkSize = fdFrom.pageSize;
+    await binFileUtils__namespace.startReadUniqueSection(fdFrom, sections, sectionId);
+    if (part == 1) {
+        await binFileUtils__namespace.startWriteSection(fdTo, sectionId);
+    }
+    for (let p=0; p<size; p+=chunkSize) {
+        const l = Math.min(size -p, chunkSize);
+        const buff = await fdFrom.read(l);
+        await fdTo.write(buff);
+    }
+    if (part > 1) {
+        await binFileUtils__namespace.endWriteSection(fdTo);
+    }
+    await binFileUtils__namespace.endReadSection(fdFrom, size != sections[sectionId][0].size);
 }
 
 /*

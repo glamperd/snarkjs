@@ -52,7 +52,7 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
         await processSection(5, newSection, "G1", "betaTauG1", fromPower, toPower );
         break;
     default:
-        logger.info(`Invalid section number ${section}`)
+        logger.info(`Invalid section number ${section}`);
     }
 
     await fdOld.close();
@@ -67,7 +67,7 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
 
         await binFileUtils.startWriteSection(fdNew, newSectionId);
 
-        for (let p=fromPower; p<=toPower; p++) {
+        for (let p=fromPower; p<=Math.min(toPower, power); p++) {
             await processSectionPower(p);
         }
 
