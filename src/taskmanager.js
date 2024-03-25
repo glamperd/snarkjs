@@ -83,7 +83,7 @@ async function buildTaskManager(fn, mods, initTask) {
         concurrency = navigator.hardwareConcurrency;
     } else {
         const os = require("os");
-        concurrency = os.cpus().length;
+        concurrency = os.availableParallelism();
     }
 
     const tm = {
