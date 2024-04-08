@@ -3143,7 +3143,7 @@ async function prepareSectionMerge(oldPtauFilename, sectionFile, newPTauFilename
     const params = /(.+)_s(\d+)_(\d+)_(\d+)/.exec(sectionFile);
     const section = Number(params[2]);
     const fromPower = Number(params[3]);
-    const toPower = Number(params[4]);
+    Number(params[4]);
 
     const {fd: fdOld, sections} = await binFileUtils__namespace.readBinFile(oldPtauFilename, "ptau", 1); // Has progress to date
     const { curve, power } = await readPTauHeader(fdOld, sections);
@@ -3154,9 +3154,7 @@ async function prepareSectionMerge(oldPtauFilename, sectionFile, newPTauFilename
     await writePTauHeader(fdNew, curve, power);
 
     let isMerge = false;
-    if ((section == 2 && toPower < power+1) ||
-        (section > 2 && toPower < power) ||
-        fromPower > 0) {
+    if (fromPower > 0) {
         isMerge = true;
     } 
 

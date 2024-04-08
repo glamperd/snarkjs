@@ -36,9 +36,7 @@ export default async function prepareSectionMerge(oldPtauFilename, sectionFile, 
     await utils.writePTauHeader(fdNew, curve, power);
 
     let isMerge = false;
-    if ((section == 2 && toPower < power+1) ||
-        (section > 2 && toPower < power) ||
-        fromPower > 0) {
+    if (fromPower > 0) {
         isMerge = true;
     } 
 
