@@ -90,7 +90,6 @@ export default async function prepareSection(oldPtauFilename, newPTauFilename, s
             }
             await binFileUtils.endReadSection(fdOld, true);
 
-
             buff = await G.lagrangeEvaluations(buff, "affine", "affine", logger, sectionName);
             await fdNew.write(buff);
 

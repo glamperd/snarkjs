@@ -3004,13 +3004,6 @@ async function prepareSection(oldPtauFilename, newPTauFilename, section, fromPow
     const fdNew = await binFileUtils__namespace.createBinFile(newName, "ptau", 1, 11);
     await writePTauHeader(fdNew, curve, power);
 
-    // await binFileUtils.copySection(fdOld, sections, fdNew, 2);
-    // await binFileUtils.copySection(fdOld, sections, fdNew, 3);
-    // await binFileUtils.copySection(fdOld, sections, fdNew, 4);
-    // await binFileUtils.copySection(fdOld, sections, fdNew, 5);
-    // await binFileUtils.copySection(fdOld, sections, fdNew, 6);
-    // await binFileUtils.copySection(fdOld, sections, fdNew, 7);
-
     switch (Number(section)) {
     case 2: 
         await processSection(2, newSection, "G1", "tauG1", fromPower, toPower ); 
@@ -3069,7 +3062,6 @@ async function prepareSection(oldPtauFilename, newPTauFilename, section, fromPow
                 await fdOld.readToBuffer(buff, 0,nPoints*sGin );
             }
             await binFileUtils__namespace.endReadSection(fdOld, true);
-
 
             buff = await G.lagrangeEvaluations(buff, "affine", "affine", logger, sectionName);
             await fdNew.write(buff);
