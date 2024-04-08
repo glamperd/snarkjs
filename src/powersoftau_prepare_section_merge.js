@@ -35,10 +35,7 @@ export default async function prepareSectionMerge(oldPtauFilename, sectionFile, 
     const fdNew = await binFileUtils.createBinFile(newPTauFilename, "ptau", 1, 11);
     await utils.writePTauHeader(fdNew, curve, power);
 
-    let isMerge = false;
-    if (fromPower > 0) {
-        isMerge = true;
-    } 
+    let isMerge = (fromPower > 0);
 
     // Copy sections 2 to section-1 from old
     for (let s = 2; s < section; s++) {
